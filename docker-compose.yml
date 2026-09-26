@@ -1,0 +1,26 @@
+# Project name keeps these containers and volumes separate from other local projects.
+name: ai-slice
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      # Local development credentials only. Never reuse outside this machine.
+      POSTGRES_USER: aislice
+      POSTGRES_PASSWORD: aislice
+      POSTGRES_DB: aislice
+    ports:
+      # 5435 on the host: 5432 notebound-postgres, 5433 auth-slice, 5434 payment-slice.
+      - "5435:5432"
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/18/docker, so mount the parent.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aislice -d aislice"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+    name: ai-slice-pgdata

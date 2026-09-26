@@ -1,0 +1,11 @@
+// The connection URL lives in prisma.config.ts (Prisma 7 no longer reads it here).
+// Models are added with the first feature; files are never stored here, only storage keys.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
