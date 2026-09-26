@@ -36,3 +36,46 @@ Append-only. Never edit or delete past entries.
 - Cause: assumed Python was available, and the commands weren't chained on the script succeeding.
 - Fix: added the entry with the editor tool in a follow-up commit. Use Node or the editor for file edits here.
 - Commit: docs: log Gemini model decision
+
+### Typecheck: models missing on PrismaClient after migrate (2026-09-26)
+- Symptom: `Property 'session' does not exist on type 'PrismaClient'` (and batch/receipt/job/summary).
+- Investigation: the migration was applied; src/generated/prisma was from the empty initial schema.
+- Cause: I created the migration with `--create-only` and then applied it; the client was not regenerated.
+- Fix: `npx prisma generate`. `npm run db:migrate` already runs generate, so this only affects hand-run migrations.
+- Commit: feat: receipt upload and background extraction/summary pipeline
+
+### Unknown currency "ZZZ" accepted as real (2026-09-26)
+- Symptom: scripts/check-validation.ts: `toMinorUnits("1", "ZZZ")` returned 100, expected null.
+- Investigation: `new Intl.NumberFormat("en", {style:"currency", currency:"ZZZ"})` does not throw;
+  any well-formed 3-letter code formats as a 2-decimal currency.
+- Cause: I assumed Intl validates currency codes against ISO 4217. It only checks the shape.
+- Fix: check against `Intl.supportedValuesOf("currency")` first. A model-invented currency is now rejected.
+- Commit: feat: receipt upload and background extraction/summary pipeline
+
+### Retry timing looked too fast (false alarm) + backoff moved to DB clock (2026-09-26)
+- Symptom: a batch whose extractions needed 5 s + 10 s of backoff appeared "done after 9s".
+- Investigation: compared the Node clock with Postgres `now()` (0.3 s apart); job rows showed
+  created 01:18:46, finished 01:19:03 = 17 s, which is correct.
+- Cause: my polling loop counted iterations (each ~2 s: curl + sleep), not seconds.
+- Fix: none needed for the timing. It did show that run_after was computed on the app clock
+  while leases use the DB clock; run_after is now set with the database's now() in fencedFinish,
+  so all queue timing uses one clock.
+- Commit: feat: receipt upload and background extraction/summary pipeline
+
+### Worker kept old code after hot reload (2026-09-26)
+- Symptom: none observed; spotted while reasoning about the test: the one-worker guard flag
+  lives on globalThis, which survives dev hot reload, so the running loop keeps the old handler code.
+- Fix: restarted the dev server before testing worker changes. Dev-only; production starts fresh.
+- Commit: n/a (documented)
+
+### End-to-end verification without API keys (2026-09-26)
+- Server run with DATABASE_URL/APP_URL passed on the command line (no .env exists; keys by hand only).
+- Upload: signed out → 401; HTML renamed .png → 400 (bytes checked); no files → 400; 2 PNGs → 202.
+- Extraction without DEEPSEEK_API_KEY: 3 attempts each, last_error recorded, receipts "failed",
+  fallback summary "nothing to summarise", batch done. Images present in storage/, DB holds keys only.
+- Summary without GEMINI_API_KEY (receipts inserted as extracted): 3 attempts, fallback with both
+  receipts under Other, total 2050 USD computed in code, unreadable receipt excluded.
+- Abandoned final-attempt job (expired lease): marked failed, receipt failed, fallback summary written.
+- Concurrency: scripts/check-concurrency.ts, two simultaneous claimers → 3 + 0 of 5 queued (cap 3).
+- Another user's batch → 404 from both the API and the page.
+- NOT verified: a real DeepSeek or Gemini call (needs the owner's keys in .env).

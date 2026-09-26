@@ -40,4 +40,70 @@
 - Source: ai.google.dev/gemini-api/docs/pricing and /models, read 2026-09-26 (prices valid to 2026-12-31).
 - Files: src/config/ai.ts
 
+### gemini-3.8-flash stays: confirmed $0 on the free tier (2026-09-26)
+- Checked: Google's pricing page lists gemini-3.8-flash free-tier input and output (thinking
+  tokens included) as "Free of charge". No model is labelled a free-only "test" model, so there
+  is no more reliably free option to switch to.
+- Conditions for $0: the GEMINI_API_KEY must come from an AI Studio project with NO billing
+  account attached. Free-tier prompts are used by Google to improve its products (acceptable for
+  test receipts; not for real ones). Exact per-model request limits are only shown per account at
+  aistudio.google.com/rate-limit and are not guaranteed; a handful of receipts per session is far
+  below any published free quota. A 429 from Gemini is handled like any other failure (retry, then fallback).
+- Note: DeepSeek has no free tier; extraction is paid per call on platform.deepseek.com.
+- Files: src/config/ai.ts
+
+### Sign-in reused from auth-slice (via payment-slice's trimmed copy) (2026-09-26)
+- Chosen: users + sessions tables, argon2id password hashing, sign-in/sign-out routes, proxy gate,
+  seeded test users. Same code as payment-slice, cookie renamed to ai_slice_session so the three
+  apps on localhost don't share a session cookie.
+- Rejected: building sign-up/verification/reset here (outside this slice's brief).
+- Files: src/lib/auth/*, src/app/api/auth/*, src/app/(auth)/sign-in/*, src/proxy.ts, scripts/seed.ts
+
+### Background work: jobs table + in-process worker, cap enforced in the database (2026-09-26)
+- Chosen: a `jobs` table and a polling worker started from src/instrumentation.ts. Claiming uses a
+  per-kind advisory lock + FOR UPDATE SKIP LOCKED, counts running jobs and claims only up to the
+  cap, so the cap holds across processes (scripts/check-concurrency.ts proves it with two
+  competing claimers). Leases make a crashed worker's job reclaimable; each claim uses up an
+  attempt; finishing is fenced on the attempt number so a stale worker can't overwrite a newer one.
+  All queue timing (leases, retry backoff) uses the database clock.
+- Rejected: `after()` / fire-and-forget promises from the upload handler (work lost on restart,
+  no retry state, cap only per process); an in-memory semaphore (same); Redis/BullMQ (new
+  infrastructure for a few receipts per session).
+- Files: src/lib/jobs/*, src/instrumentation.ts, prisma/schema.prisma
+
+### The model categorises; code computes every total (2026-09-26)
+- Refines the plan ("reject if model totals differ"): Gemini is not asked for totals at all. It
+  returns a category + reason per receipt and an overview; totals per (category, currency) are
+  summed in code from the validated extracted amounts. A wrong sum is impossible rather than detected.
+- Amounts are never added across currencies.
+- Files: src/lib/validation/summary.ts, src/lib/ai/gemini.ts
+
+### Extraction returns decimal strings; code converts to minor units (2026-09-26)
+- Chosen: DeepSeek returns "12.50"; src/lib/money.ts converts with the currency's own decimals
+  (JPY 0, USD 2, KWD 3) using string arithmetic. Unknown currency codes are rejected.
+- Rejected: asking the model for integer minor units (error-prone for non-2-decimal currencies).
+- Validation also rejects non-receipts and line items that don't add up to the total (within
+  `lineItemTolerancePercent`).
+- Files: src/lib/validation/extraction.ts, src/lib/money.ts
+
+### Fallbacks: a batch always finishes (2026-09-26)
+- Extraction exhausts its attempts → receipt marked "failed", shown as unreadable, left out of totals.
+- Summary exhausts its attempts → summary built in code: every readable receipt under "Other",
+  exact totals, source = 'fallback', shown as a partial result.
+- No readable receipts → fallback summary without any model call.
+- Worker dies on a final attempt → lease expiry triggers the same fallbacks.
+- Hence no 'failed' batch status.
+- Files: src/lib/jobs/handlers.ts
+
+### Storage: local directory behind a storage module (2026-09-26)
+- Chosen: images are written to ./storage (gitignored) through src/lib/storage.ts; the database
+  holds only the storage key. Keys are server-generated UUIDs, and paths are checked to stay under the root.
+- Files are written before the rows; if the DB insert fails, the files are orphaned (harmless,
+  unreferenced), never a row pointing at a missing file.
+- Rejected for now: S3/R2 (needs credentials and a bucket for a local assessment). Swapping means
+  rewriting only src/lib/storage.ts.
+- Files: src/lib/storage.ts, src/app/api/receipts/route.ts
+
 ## Deliberately excluded
+- Deleting batches or receipt images: not in the brief.
+- Editing an extraction by hand: not in the brief.
