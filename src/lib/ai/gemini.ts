@@ -1,7 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
-import { aiConfig, EXPENSE_CATEGORIES } from "@/config/ai";
-import { modelSummaryJsonSchema, type SummaryInputReceipt } from "@/lib/validation/summary";
-import { formatMoney } from "@/lib/money";
+import { aiConfig } from "@/config/ai";
+import { rawExtractionJsonSchema } from "@/lib/validation/extraction";
+
+// Gemini does EXTRACTION: one receipt image in, structured JSON out.
+// The SDK is not asked to retry: retries belong to the job queue (with backoff, attempt counting
+// and a final fallback), not hidden inside the SDK where they would silently stretch the timeout.
 
 let client: GoogleGenAI | undefined;
 function getClient(): GoogleGenAI {
@@ -10,33 +13,36 @@ function getClient(): GoogleGenAI {
   return (client ??= new GoogleGenAI({ apiKey }));
 }
 
-const SYSTEM_INSTRUCTION = `You categorise business expense receipts.
-Assign every receipt exactly one category from: ${EXPENSE_CATEGORIES.join(", ")}.
-Use "Other" only when none of the others fits.
-Give a short reason (one sentence) per receipt, and a 1-3 sentence overview of the spending.
-Do not calculate totals; they are computed separately. Return JSON matching the schema.`;
+const SYSTEM_INSTRUCTION = `You read photos of purchase receipts and return JSON matching the schema.
+Rules:
+- Amounts are plain decimal strings in the receipt's currency, e.g. "12.50". No symbols, no thousands separators.
+- "total" is the final amount paid, including tax and tip.
+- "currency" is an ISO 4217 code. If it is not printed, infer it from the country/merchant; if you cannot, use "USD".
+- Use null for a merchant or date you cannot read. Use [] if there are no readable line items.
+- If the image is not a receipt, set is_receipt to false, total to "0" and line_items to [].`;
 
-// Only extracted, validated data is sent: never the images, never user or file names.
-export async function summariseText(receipts: SummaryInputReceipt[]): Promise<string | null> {
-  const payload = receipts.map((r) => ({
-    receipt_id: r.id,
-    merchant: r.merchant,
-    date: r.date,
-    total: formatMoney(r.totalMinor, r.currency),
-    line_items: r.lineItems.map((i) => `${i.description}: ${formatMoney(i.amountMinor, r.currency)}`),
-  }));
-
+// Returns the model's raw text; parsing and validation happen in src/lib/validation/extraction.ts.
+export async function extractReceiptText(image: Buffer, mimeType: string): Promise<string | null> {
   const response = await getClient().models.generateContent({
-    model: aiConfig.summary.model,
-    contents: JSON.stringify(payload),
+    model: aiConfig.extraction.model,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: "Extract this receipt." },
+          { inlineData: { mimeType, data: image.toString("base64") } },
+        ],
+      },
+    ],
     config: {
       systemInstruction: SYSTEM_INSTRUCTION,
-      temperature: aiConfig.summary.temperature,
-      maxOutputTokens: aiConfig.summary.maxOutputTokens,
+      temperature: aiConfig.extraction.temperature,
+      maxOutputTokens: aiConfig.extraction.maxOutputTokens,
+      // Structured output: Gemini is constrained to the same schema Zod validates afterwards.
       responseMimeType: "application/json",
-      responseJsonSchema: modelSummaryJsonSchema,
-      abortSignal: AbortSignal.timeout(aiConfig.summary.timeoutMs),
-      httpOptions: { timeout: aiConfig.summary.timeoutMs },
+      responseJsonSchema: rawExtractionJsonSchema,
+      abortSignal: AbortSignal.timeout(aiConfig.extraction.timeoutMs),
+      httpOptions: { timeout: aiConfig.extraction.timeoutMs },
     },
   });
   return response.text ?? null;

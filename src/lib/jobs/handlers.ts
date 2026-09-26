@@ -1,8 +1,8 @@
 import { aiConfig } from "@/config/ai";
 import { db } from "@/lib/db";
 import { getObject } from "@/lib/storage";
-import { extractReceiptText } from "@/lib/ai/deepseek";
-import { summariseText } from "@/lib/ai/gemini";
+import { extractReceiptText } from "@/lib/ai/gemini";
+import { summariseText } from "@/lib/ai/deepseek";
 import { parseExtraction } from "@/lib/validation/extraction";
 import {
   buildSummary,
@@ -39,7 +39,7 @@ function failureUpdate(job: ClaimedJob, error: string) {
   };
 }
 
-// ───────── extract: one receipt image -> validated structured receipt (DeepSeek) ─────────
+// ───────── extract: one receipt image -> validated structured receipt (Gemini, vision) ─────────
 
 export async function runExtract(job: ClaimedJob): Promise<void> {
   const receipt = await db.receipt.findUniqueOrThrow({ where: { id: job.receiptId! } });
@@ -110,7 +110,7 @@ export async function queueSummaryIfReady(batchId: string): Promise<void> {
   });
 }
 
-// ───────── summarise: validated receipts -> categorised summary (Gemini) ─────────
+// ───────── summarise: validated receipts -> categorised summary (DeepSeek, text only) ─────────
 
 async function loadSummaryInputs(batchId: string) {
   const receipts = await db.receipt.findMany({ where: { batchId }, orderBy: { createdAt: "asc" } });

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { aiConfig } from "@/config/ai";
 import { toMinorUnits } from "@/lib/money";
 
-// What DeepSeek is asked to return. Amounts come back as decimal STRINGS in major units ("12.50"):
+// What Gemini is asked to return. Amounts come back as decimal STRINGS in major units ("12.50"):
 // asking a model for integer minor units invites mistakes on currencies with 0 or 3 decimals, so
 // the conversion is done here, deterministically, from the currency's own number of decimals.
 const decimalString = z.string().trim().regex(/^\d+(\.\d{1,3})?$/, "must be a plain decimal like 12.50");
@@ -18,6 +18,10 @@ export const rawExtractionSchema = z.object({
     .array(z.object({ description: z.string().trim().min(1).max(200), amount: decimalString }))
     .max(100),
 });
+
+// JSON Schema sent to Gemini as responseJsonSchema, derived from the Zod schema so the two can't
+// drift apart. io: "input" describes what the model must SEND (before trim/uppercase run).
+export const rawExtractionJsonSchema = z.toJSONSchema(rawExtractionSchema, { io: "input" });
 
 export type ExtractedReceipt = {
   merchant: string | null;

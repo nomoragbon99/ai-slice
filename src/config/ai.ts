@@ -10,9 +10,8 @@ export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
 
 export const aiConfig = {
   extraction: {
-    // DeepSeek, OpenAI-compatible API. deepseek-flash supports image input.
-    baseURL: "https://api.deepseek.com",
-    model: "deepseek-flash",
+    // Gemini (vision): runs once per receipt, the high-volume job, so it gets the free-tier model; 3.8 Flash reads JPEG/PNG/WebP inline with JSON-schema output.
+    model: "gemini-3.8-flash",
     // Hard limit on one call; on timeout the job is retried, then the receipt is marked unreadable.
     timeoutMs: 45 * SECOND,
     maxOutputTokens: 1_024,
@@ -22,8 +21,9 @@ export const aiConfig = {
     lineItemTolerancePercent: 2,
   },
   summary: {
-    // Flash tier is enough for schema-bound categorise+summarise; 3.8 is current stable (2.5 is access-limited for new projects), free tier on an unbilled AI Studio key.
-    model: "gemini-3.8-flash",
+    // DeepSeek (text only): runs once per batch, the low-volume job, so the paid model costs one call per upload.
+    baseURL: "https://api.deepseek.com",
+    model: "deepseek-flash",
     timeoutMs: 30 * SECOND,
     maxOutputTokens: 1_024,
     temperature: 0.2,
@@ -32,6 +32,7 @@ export const aiConfig = {
   },
   jobs: {
     // Max jobs of each kind running at once, across every worker process (enforced in the database).
+    // Extraction is on Gemini's free tier, whose per-minute request limit is per account; keep this low.
     concurrency: { extract: 3, summarise: 1 },
     maxAttempts: { extract: 3, summarise: 3 },
     // Retry n waits n x this long before it can be claimed again.

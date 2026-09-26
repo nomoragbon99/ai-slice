@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { aiConfig, EXPENSE_CATEGORIES, type ExpenseCategory } from "@/config/ai";
 
-// What Gemini is asked for: a category per receipt and a short overview. It is NOT asked for any
+// What DeepSeek is asked for: a category per receipt and a short overview. It is NOT asked for any
 // totals: arithmetic is done in code (buildSummary), so a model can never produce a wrong sum.
 export const modelSummarySchema = z.object({
   receipts: z.array(
@@ -15,10 +15,6 @@ export const modelSummarySchema = z.object({
   overview: z.string().trim().min(1).max(aiConfig.summary.maxOverviewLength),
 });
 export type ModelSummary = z.infer<typeof modelSummarySchema>;
-
-// JSON Schema sent to Gemini as responseJsonSchema, derived from the Zod schema above so the two
-// can never drift apart.
-export const modelSummaryJsonSchema = z.toJSONSchema(modelSummarySchema);
 
 export type SummaryInputReceipt = {
   id: string;
