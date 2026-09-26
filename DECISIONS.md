@@ -104,6 +104,31 @@
   rewriting only src/lib/storage.ts.
 - Files: src/lib/storage.ts, src/app/api/receipts/route.ts
 
+### Provider roles swapped: Gemini extracts, DeepSeek summarises (2026-09-26)
+- Supersedes the first entry's role assignment (the two-role split itself is unchanged).
+- Chosen: `gemini-3.8-flash` reads each receipt image (vision, JSON-schema-constrained output);
+  `deepseek-flash` categorises each batch from the extracted JSON (text only, no images).
+- Why: extraction runs once per RECEIPT, summarisation once per BATCH, so extraction is the
+  higher-volume job. It is also the larger input (an image per call vs a few hundred tokens of JSON).
+  Putting the free-tier model on it and the paid model on the once-per-batch call cuts the paid
+  calls per batch from N (one per receipt) to 1.
+- Verified (docs + types, no live call): Gemini 3.8 Flash accepts image/jpeg, png and webp inline
+  (≤ 20 MB per request) and supports JSON-schema output together with image input.
+  `models.generateContent` with `{ inlineData: { mimeType, data } }` and `responseJsonSchema`
+  typechecks under strict. Google's docs now lead with the newer Interactions API; generateContent
+  is kept because it is the SDK's established call and has the same shape as before.
+- The extraction schema sent to Gemini is generated from the Zod schema (`io: "input"`), so the
+  constraint and the validator can't drift. DeepSeek's JSON mode guarantees JSON but not a schema,
+  so the summary shape is spelled out in its prompt and enforced by Zod, as before.
+- Trade-offs: Gemini's free tier has per-account per-minute limits, and extraction is now where
+  bursts happen (up to 5 receipts per upload, 3 concurrent). A free-tier 429 is retried with
+  backoff like any other failure. Free-tier images are used by Google to improve its products.
+- Unverified until a real call: whether Gemini accepts every JSON Schema feature Zod emits (the
+  long date `pattern`, `anyOf` for nullables). If it rejects the schema, the call fails
+  visibly (last_error) rather than silently, and the fix is simplifying the date rule.
+- Files: src/config/ai.ts, src/lib/ai/gemini.ts, src/lib/ai/deepseek.ts,
+  src/lib/validation/extraction.ts, src/lib/validation/summary.ts, src/lib/jobs/handlers.ts
+
 ## Deliberately excluded
 - Deleting batches or receipt images: not in the brief.
 - Editing an extraction by hand: not in the brief.

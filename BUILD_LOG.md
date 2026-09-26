@@ -79,3 +79,33 @@ Append-only. Never edit or delete past entries.
 - Concurrency: scripts/check-concurrency.ts, two simultaneous claimers → 3 + 0 of 5 queued (cap 3).
 - Another user's batch → 404 from both the API and the page.
 - NOT verified: a real DeepSeek or Gemini call (needs the owner's keys in .env).
+
+### Test server could load the owner's .env (risk avoided) (2026-09-26)
+- Symptom: none; a .env now exists (not read), and `next dev` loads .env automatically, so a
+  "missing key" test could have made real, billed calls with the owner's keys.
+- Investigation: @next/env has special handling for empty-string variables (replaceProcessEnv deletes
+  them), so overriding with KEY="" was not provably safe.
+- Fix: ran the tests from a git clone in the scratchpad. .env is gitignored, so the clone had none;
+  the dev log showed no "Environments: .env" line. Clone deleted afterwards.
+- Commit: refactor: swap provider roles (Gemini extracts, DeepSeek summarises)
+
+### Turbopack rejected a node_modules junction (2026-09-26)
+- Symptom: `TurbopackInternalError: Symlink [project]/node_modules is invalid, it points out of the filesystem root`.
+- Investigation: to save an install, the clone's node_modules was a junction to the project's. The
+  test script ran against no server (all curls empty); its inserted rows were processed later.
+- Cause: Turbopack refuses symlinks/junctions that leave the project root.
+- Fix: removed the junction with `rmdir` (the target was left intact, 407 packages) and ran `npm ci` in the clone.
+- Commit: n/a (test setup only)
+
+### Failure-path re-verification after the role swap (2026-09-26)
+- check:validation 6/6 (bad/unknown currency, non-receipt, bad dates, inconsistent line items,
+  summary id/category rules, code-computed totals, byte-sniffed image type).
+- check:concurrency: two simultaneous claimers → 3 + 0 of 5 (cap 3), no double claim.
+- Upload: signed out 401; HTML renamed .png 400; no files 400; 2 PNGs 202.
+- Extraction without GEMINI_API_KEY: 3 attempts each, receipts failed, "nothing to summarise"
+  fallback, batch done; storage keys only in DB.
+- Summary without DEEPSEEK_API_KEY: 3 attempts, fallback all "Other", 2050 USD computed in code,
+  1 unreadable receipt excluded.
+- Worker crash on final attempt: lease expiry → job failed, receipt failed, fallback summary.
+- Another user's batch: 404.
+- NOT verified: real Gemini or DeepSeek calls.
