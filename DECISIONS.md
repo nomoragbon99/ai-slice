@@ -171,3 +171,15 @@
 ## Deliberately excluded
 - Deleting batches or receipt images: not in the brief.
 - Editing an extraction by hand: not in the brief.
+
+### Extraction reports tax separately; check is line items + tax = total (2026-09-26)
+- Why: jobs.raw_response for "receipt 1.png" showed Gemini read the receipt correctly: items 38.95,
+  total 42.07. The 3.12 gap is exactly 8% of the subtotal. The old check (items = total within 2%)
+  rejected any receipt with more than ~2% tax.
+- Chosen: a nullable `tax` field (tax + tip + service charge combined, decimal string like every
+  amount); the prompt tells Gemini to keep these out of line_items and to add them up itself if
+  listed separately. Check: line items + (tax ?? 0) = total within the unchanged 2% tolerance.
+  taxMinor is kept in receipts.extracted_json; no column added (nothing reads it separately yet).
+- Rejected: accepting items < total with the gap treated as tax (would also accept a missed item);
+  prompt-only listing tax as line items (tax would then be categorised like a purchase).
+- Files: src/lib/validation/extraction.ts, src/lib/ai/gemini.ts, scripts/check-validation.ts

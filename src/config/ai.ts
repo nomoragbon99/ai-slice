@@ -16,8 +16,8 @@ export const aiConfig = {
     timeoutMs: 45 * SECOND,
     maxOutputTokens: 1_024,
     temperature: 0,
-    // Line items may differ from the printed total by up to this percent (rounding, tips, tax
-    // lines the model skipped) before the extraction is rejected as inconsistent.
+    // Line items + tax may differ from the printed total by up to this percent (rounding, a
+    // discount the model skipped) before the extraction is rejected as inconsistent.
     lineItemTolerancePercent: 2,
   },
   summary: {

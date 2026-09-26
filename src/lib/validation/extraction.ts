@@ -14,6 +14,8 @@ export const rawExtractionSchema = z.object({
   date: z.iso.date().nullable(),
   currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, "must be a 3-letter ISO 4217 code"),
   total: decimalString,
+  // Tax + tip + service charge combined; null when the receipt shows none.
+  tax: decimalString.nullable(),
   line_items: z
     .array(z.object({ description: z.string().trim().min(1).max(200), amount: decimalString }))
     .max(100),
@@ -36,6 +38,7 @@ export const rawExtractionJsonSchema = {
     date: nullableString,
     currency: { type: "string" },
     total: { type: "string" },
+    tax: nullableString,
     line_items: {
       type: "array",
       items: {
@@ -48,7 +51,7 @@ export const rawExtractionJsonSchema = {
       },
     },
   },
-  required: ["is_receipt", "merchant", "date", "currency", "total", "line_items"],
+  required: ["is_receipt", "merchant", "date", "currency", "total", "tax", "line_items"],
 } as const;
 
 export type ExtractedReceipt = {
@@ -56,6 +59,8 @@ export type ExtractedReceipt = {
   date: string | null;
   currency: string;
   totalMinor: number;
+  // Tax + tip + service charge in minor units; null when the receipt shows none.
+  taxMinor: number | null;
   lineItems: { description: string; amountMinor: number }[];
 };
 
@@ -82,6 +87,12 @@ export function parseExtraction(text: string | null | undefined): ExtractionResu
   const totalMinor = toMinorUnits(raw.total, raw.currency);
   if (totalMinor === null) return { ok: false, error: `unsupported currency or amount: ${raw.currency} ${raw.total}` };
 
+  let taxMinor: number | null = null;
+  if (raw.tax !== null) {
+    taxMinor = toMinorUnits(raw.tax, raw.currency);
+    if (taxMinor === null) return { ok: false, error: `bad tax amount: ${raw.tax}` };
+  }
+
   const lineItems: ExtractedReceipt["lineItems"] = [];
   for (const item of raw.line_items) {
     const amountMinor = toMinorUnits(item.amount, raw.currency);
@@ -89,17 +100,21 @@ export function parseExtraction(text: string | null | undefined): ExtractionResu
     lineItems.push({ description: item.description, amountMinor });
   }
 
-  // Consistency check: the items should add up to the total. Receipts with no itemisation pass.
+  // Consistency check: line items + tax should add up to the total. Receipts with no itemisation pass.
   if (lineItems.length > 0) {
-    const sum = lineItems.reduce((acc, i) => acc + i.amountMinor, 0);
+    const itemsSum = lineItems.reduce((acc, i) => acc + i.amountMinor, 0);
+    const sum = itemsSum + (taxMinor ?? 0);
     const allowed = Math.ceil((totalMinor * aiConfig.extraction.lineItemTolerancePercent) / 100);
     if (Math.abs(sum - totalMinor) > allowed) {
-      return { ok: false, error: `line items sum to ${sum} but total is ${totalMinor} (minor units)` };
+      return {
+        ok: false,
+        error: `line items (${itemsSum}) + tax (${taxMinor ?? 0}) = ${sum} but total is ${totalMinor} (minor units)`,
+      };
     }
   }
 
   return {
     ok: true,
-    value: { merchant: raw.merchant, date: raw.date, currency: raw.currency, totalMinor, lineItems },
+    value: { merchant: raw.merchant, date: raw.date, currency: raw.currency, totalMinor, taxMinor, lineItems },
   };
 }

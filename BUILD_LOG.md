@@ -164,3 +164,13 @@ Append-only. Never edit or delete past entries.
 - Fix: jobs.raw_response now stores the model's raw reply whenever it fails validation (extraction and
   summary), truncated to aiConfig.jobs.maxRawResponseChars. Validation rule unchanged (owner's decision).
 - Commit: feat: store the model's raw reply when validation fails
+
+### Line-item mismatch diagnosed from raw_response: tax (2026-09-26)
+- Symptom: same receipt re-uploaded, 17:32:51-17:33:03 UTC, same `line items sum to 3895 but total is 4207`.
+- Investigation: jobs.raw_response: items 14.99 + 9.99 + 5.98 + 7.99 = 38.95; total 42.07;
+  38.95 x 0.08 = 3.116 → 3.12 and 38.95 + 3.12 = 42.07. Extraction was accurate; the check was wrong.
+- Cause: validation compared items alone against a tax-inclusive total.
+- Fix: `tax` field + items + tax = total check (DECISIONS.md). check:validation 9/9, including
+  Gemini's actual Bistro reply passing with tax 3.12 and failing without it.
+- NOT verified: that Gemini fills `tax` correctly: next real upload.
+- Commit: feat: extract tax separately and include it in the total check

@@ -16,10 +16,13 @@ function getClient(): GoogleGenAI {
 const SYSTEM_INSTRUCTION = `You read photos of purchase receipts and return JSON matching the schema.
 Rules:
 - Amounts are plain decimal strings in the receipt's currency, e.g. "12.50". No symbols, no thousands separators.
-- "total" is the final amount paid, including tax and tip.
+- "total" is the final amount paid, including tax, tip and service charge.
+- "tax" is tax + tip + service charge added together, as one amount. Add them up yourself if the
+  receipt lists them separately. Use null if the receipt shows none of them.
+- "line_items" are the purchased items only. Do not list tax, tip or service charge as line items.
 - "currency" is an ISO 4217 code. If it is not printed, infer it from the country/merchant; if you cannot, use "USD".
 - Use null for a merchant or date you cannot read. Use [] if there are no readable line items.
-- If the image is not a receipt, set is_receipt to false, total to "0" and line_items to [].`;
+- If the image is not a receipt, set is_receipt to false, total to "0", tax to null and line_items to [].`;
 
 // Returns the model's raw text; parsing and validation happen in src/lib/validation/extraction.ts.
 export async function extractReceiptText(image: Buffer, mimeType: string): Promise<string | null> {

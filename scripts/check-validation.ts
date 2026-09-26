@@ -31,6 +31,7 @@ const good = {
   date: "2026-09-01",
   currency: "usd",
   total: "10.00",
+  tax: null,
   line_items: [
     { description: "Coffee", amount: "4.00" },
     { description: "Cake", amount: "6.00" },
@@ -44,13 +45,38 @@ check("valid extraction converts to minor units and uppercases currency", () => 
   assert.equal(r.value.currency, "USD");
 });
 
+check("line items + tax must equal the total (the real Bistro receipt)", () => {
+  // Gemini's actual reply for "receipt 1.png" (jobs.raw_response), which failed the old items-only check.
+  const bistro = {
+    is_receipt: true,
+    merchant: "THE BISTRO",
+    date: "2026-03-18",
+    currency: "USD",
+    total: "42.07",
+    line_items: [
+      { description: "BURGER DELUXE", amount: "14.99" },
+      { description: "CAESAR SALAD", amount: "9.99" },
+      { description: "2 x SOFT DRINK @ $2.99", amount: "5.98" },
+      { description: "CHEESECAKE", amount: "7.99" },
+    ],
+  };
+  const withTax = parseExtraction(JSON.stringify({ ...bistro, tax: "3.12" }));
+  assert.ok(withTax.ok);
+  assert.equal(withTax.value.taxMinor, 312);
+  const noTax = parseExtraction(JSON.stringify({ ...bistro, tax: null }));
+  assert.ok(!noTax.ok && noTax.error.includes("line items (3895) + tax (0) = 3895 but total is 4207"));
+  assert.equal(parseExtraction(JSON.stringify({ ...bistro, tax: "9.00" })).ok, false); // tax too big
+  assert.equal(parseExtraction(JSON.stringify({ ...bistro, tax: "$3.12" })).ok, false); // not a plain decimal
+  assert.equal(parseExtraction(JSON.stringify(bistro)).ok, false); // tax key missing entirely
+});
+
 check("extraction rejects non-JSON, non-receipts, bad dates and inconsistent line items", () => {
   assert.equal(parseExtraction("not json").ok, false);
   assert.equal(parseExtraction(JSON.stringify({ ...good, is_receipt: false })).ok, false);
   assert.equal(parseExtraction(JSON.stringify({ ...good, date: "01/09/2026" })).ok, false);
   assert.equal(parseExtraction(JSON.stringify({ ...good, total: "$10" })).ok, false);
   const r = parseExtraction(JSON.stringify({ ...good, total: "50.00" }));
-  assert.ok(!r.ok && r.error.includes("line items sum"));
+  assert.ok(!r.ok && r.error.includes("but total is"));
 });
 
 check("summary must categorise every receipt exactly once, from the fixed list", () => {
