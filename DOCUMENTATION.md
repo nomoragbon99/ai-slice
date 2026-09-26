@@ -86,7 +86,7 @@ Full write-up to be completed. Sections below are filled in as the build settles
 
 **Cross-site request protection.** POST routes check the request's Origin header against APP_URL, on top of SameSite=Lax session cookies.
 
-**API keys never pass through the coding agent.** DEEPSEEK_API_KEY and GEMINI_API_KEY are entered directly into .env by the person running the project — never created, opened, or printed by the agent; the agent's diagnostic scripts loaded it into memory to make test calls while debugging the extraction schema, but the key never appeared in any output, commit, or log — so they're never exposed in a chat transcript, commit, or log the agent produces.
+**API keys never pass through the coding agent.** DEEPSEEK_API_KEY and GEMINI_API_KEY are entered directly into .env by the person running the project — never created, opened, or printed by the agent; the agent's diagnostic scripts loaded it into memory to make test calls while debugging the extraction schema, but the key never appeared in any output, commit, or log.
 
 **Uploaded files aren't served directly.** Only a storage key is stored in the database; the raw files sit in a local storage/ folder outside of anything served publicly. This also means a compromised database record can't be used to point at an arbitrary file path.
 
