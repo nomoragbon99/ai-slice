@@ -21,7 +21,8 @@ import { errorText, fencedFinish, retryDelayMs, type ClaimedJob, type Tx } from 
 
 // retryable: false unless the failure is one that can clear by itself (src/lib/ai/errors.ts).
 // Invalid model output is not retried: temperature is low, so the same input gives the same answer.
-type Outcome<T> = { ok: true; value: T } | { ok: false; error: string; retryable?: boolean };
+// rawResponse: the model's reply when it arrived but failed validation, stored for inspection.
+type Outcome<T> = { ok: true; value: T } | { ok: false; error: string; retryable?: boolean; rawResponse?: string | null };
 
 async function attempt<T>(work: () => Promise<Outcome<T>>): Promise<Outcome<T>> {
   try {
@@ -32,12 +33,17 @@ async function attempt<T>(work: () => Promise<Outcome<T>>): Promise<Outcome<T>> 
   }
 }
 
-function failureUpdate(job: ClaimedJob, outcome: { error: string; retryable?: boolean }) {
+function failureUpdate(job: ClaimedJob, outcome: { error: string; retryable?: boolean; rawResponse?: string | null }) {
   const error = outcome.retryable ? outcome.error : `${outcome.error} (not retried)`;
   const final = !outcome.retryable || job.attempts >= job.maxAttempts;
   return {
     final,
-    data: { status: final ? "failed" : "queued", lastError: error },
+    data: {
+      status: final ? "failed" : "queued",
+      lastError: error,
+      // Always written, so a reply from an earlier attempt is never shown next to a later error.
+      rawResponse: outcome.rawResponse?.slice(0, aiConfig.jobs.maxRawResponseChars) ?? null,
+    },
     // Retry time is set from the database clock inside fencedFinish.
     delay: final ? undefined : retryDelayMs(job.attempts),
   };
@@ -52,14 +58,14 @@ export async function runExtract(job: ClaimedJob): Promise<void> {
     const image = await getObject(receipt.storageKey);
     const text = await extractReceiptText(image, receipt.mimeType);
     const parsed = parseExtraction(text);
-    return parsed.ok ? parsed : { ok: false as const, error: `invalid extraction: ${parsed.error}` };
+    return parsed.ok ? parsed : { ok: false as const, error: `invalid extraction: ${parsed.error}`, rawResponse: text };
   });
 
   let settled = false;
   await db.$transaction(async (tx) => {
     if (outcome.ok) {
       const v = outcome.value;
-      if (!(await fencedFinish(tx, job, { status: "succeeded", lastError: null }))) return;
+      if (!(await fencedFinish(tx, job, { status: "succeeded", lastError: null, rawResponse: null }))) return;
       await tx.receipt.update({
         where: { id: receipt.id },
         data: {
@@ -159,7 +165,7 @@ export async function runSummarise(job: ClaimedJob): Promise<void> {
   // Nothing readable: no model call is worth making.
   if (inputs.length === 0) {
     await db.$transaction(async (tx) => {
-      if (!(await fencedFinish(tx, job, { status: "succeeded", lastError: null }))) return;
+      if (!(await fencedFinish(tx, job, { status: "succeeded", lastError: null, rawResponse: null }))) return;
       await writeSummary(tx, job.batchId, fallbackSummary(inputs, excluded, "None of the receipts could be read, so there is nothing to summarise."), null);
     });
     return;
@@ -168,12 +174,12 @@ export async function runSummarise(job: ClaimedJob): Promise<void> {
   const outcome = await attempt(async () => {
     const text = await summariseText(inputs);
     const parsed = parseModelSummary(text, inputs.map((r) => r.id));
-    return parsed.ok ? parsed : { ok: false as const, error: `invalid summary: ${parsed.error}` };
+    return parsed.ok ? parsed : { ok: false as const, error: `invalid summary: ${parsed.error}`, rawResponse: text };
   });
 
   await db.$transaction(async (tx) => {
     if (outcome.ok) {
-      if (!(await fencedFinish(tx, job, { status: "succeeded", lastError: null }))) return;
+      if (!(await fencedFinish(tx, job, { status: "succeeded", lastError: null, rawResponse: null }))) return;
       const categorisation = outcome.value.receipts.map((r) => ({ receiptId: r.receipt_id, category: r.category, reason: r.reason }));
       await writeSummary(tx, job.batchId, buildSummary(inputs, categorisation, outcome.value.overview, excluded), aiConfig.summary.model);
       return;

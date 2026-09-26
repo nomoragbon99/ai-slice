@@ -40,6 +40,8 @@ export const aiConfig = {
     // A running job whose lease passes is treated as abandoned (e.g. the server restarted mid-call).
     // Must be longer than the slowest call it covers, so the longest model timeout plus margin.
     leaseMs: 2 * MINUTE,
+    // Longest model reply kept in jobs.raw_response for a failed validation (characters).
+    maxRawResponseChars: 20_000,
     // How often the worker looks for claimable jobs.
     pollIntervalMs: 2 * SECOND,
   },

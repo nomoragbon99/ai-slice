@@ -153,3 +153,14 @@ Append-only. Never edit or delete past entries.
 - NOT verified: Gemini accepting the new schema. It can't be tested until the quota resets. Arrays
   and booleans in the schema are first exercised by that real upload.
 - Commit: 5b67f70 + docs commit
+
+### Real upload after quota reset: extraction rejected by our line-item check (2026-09-26)
+- Symptom: "receipt 1.png", job ran 17:14:49-17:15:00 UTC, 1 attempt:
+  `invalid extraction: line items sum to 3895 but total is 4207 (minor units) (not retried)`.
+- Investigation: no 400 and no 429, so Gemini accepted the shape-only schema and replied with JSON
+  that passed shape/format validation. The gap (3.12, ~7.4%) exceeds lineItemTolerancePercent (2).
+  The model's reply was not stored on failure, so which figure is off could not be checked.
+- Cause: not yet known (likely tax/service charge in the total but not listed as a line item: unconfirmed).
+- Fix: jobs.raw_response now stores the model's raw reply whenever it fails validation (extraction and
+  summary), truncated to aiConfig.jobs.maxRawResponseChars. Validation rule unchanged (owner's decision).
+- Commit: feat: store the model's raw reply when validation fails
