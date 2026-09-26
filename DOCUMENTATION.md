@@ -44,15 +44,16 @@ Full write-up to be completed. Sections below are filled in as the build settles
 **Steps:**
 
 1. Clone the repo and install dependencies: npm install.
-2. Copy .env.example to .env and fill in the values by hand — DATABASE_URL, APP_URL, DEEPSEEK_API_KEY, GEMINI_API_KEY. The app never creates, reads, or prints this file; it's set up manually to keep API keys out of anything the agent touches.
+2. Copy .env.example to .env and fill in the values by hand — DATABASE_URL, APP_URL, DEEPSEEK_API_KEY, GEMINI_API_KEY. The AI coding agent never creates, reads, or prints this file; the app reads it at startup. It's set up manually to keep API keys out of anything the agent touches.
 3. Start the database: docker compose up -d. This runs PostgreSQL on port 5435, separate from auth-slice (5433) and payment-slice (5434), so all three can run at the same time without colliding.
 4. Run migrations: npx prisma migrate deploy.
-5. Start the app: npm run dev. It runs on http://localhost:3003.
-6. Sign in with a seeded test account (e.g. alice@example.com / ai-slice-test-1) and upload a receipt image to test the pipeline.
+5. Seed the test accounts: npm run db:seed. This creates alice, bob and carol test accounts, all with password ai-slice-test-1.
+6. Start the app: npm run dev. It runs on http://localhost:3003.
+7. Sign in with a seeded test account (e.g. alice@example.com / ai-slice-test-1) and upload a receipt image to test the pipeline.
 
 **Two things to know before testing:**
 
-1. Gemini's free tier caps out at 20 requests per day, per project, per model. Each receipt uploaded uses one request. The cap resets at midnight Pacific time.
+1. Gemini's free tier caps out at 20 requests per day, per project, per model. Each receipt uploaded uses one request normally — up to 3 if Gemini returns a 429, a 503, or a timeout and the job retries. The cap resets at midnight Pacific time.
 2. DeepSeek has no free tier. The account behind DEEPSEEK_API_KEY needs a small positive balance before the categorisation step will work — a call without one fails with a 402 Insufficient Balance error, and the app falls back to putting every receipt under "Other" rather than failing the whole batch.
 
 **Checking what happened:** jobs.last_error, jobs.attempt_errors, and jobs.raw_response (Prisma Studio, port 5558) show exactly what each extraction or categorisation attempt did — including the model's raw reply when it produced one but failed the app's own validation.
