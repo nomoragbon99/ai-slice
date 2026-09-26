@@ -16,6 +16,27 @@ Full write-up to be completed. Sections below are filled in as the build settles
 
 **Stack:** Next.js App Router + TypeScript (strict) + Prisma + PostgreSQL, matching auth-slice and payment-slice. Runs on port 3003, with its own database on port 5435.
 
+## 2. Architecture
+
+**Flow, end to end:**
+
+1. User signs in (reusing auth-slice's session/auth system) and uploads one or more receipt images through POST /api/receipts.
+2. That endpoint checks each file's actual bytes (not just its declared type or extension), enforces size/count limits, and saves each file to local storage. In one database transaction, it creates a Batch, one Receipt row per file, and one extract job per receipt — then responds immediately with the batch id.
+3. A background worker (started from instrumentation.ts) picks up queued extract jobs using FOR UPDATE SKIP LOCKED, so multiple jobs can be claimed safely even if there were multiple worker processes. Each job has a lease (locked_until) — if a worker crashes mid-job, the lease expires and another worker can pick the job back up.
+4. For each extract job, the worker sends the receipt image to Gemini and asks it to return merchant, date, currency, total, tax, and line items as structured JSON.
+5. The app validates Gemini's reply itself — the JSON shape, the value formats, and that line items plus tax add up to the total within a small tolerance. Only errors worth retrying (rate limits, server overload, timeouts) get retried, up to a limit; anything else — a bad or invalid reply, a 400, a bad or missing API key — fails immediately.
+6. Once every receipt in a batch has finished extracting (successfully or not), one summarise job is queued for the batch.
+7. The summarise job sends all the extracted, validated data to DeepSeek, which assigns each receipt a category and writes a short reason, plus a short overview for the whole batch. If this step itself fails (for example, a billing error), the batch still finishes: every readable receipt is shown under "Other" with its exact total, and a note explains that automatic categorisation wasn't available.
+8. The user sees a summary page: totals grouped by category, with any receipt that failed extraction clearly marked as unreadable and left out of the totals — never silently dropped.
+
+**Database tables:** batches, receipts, summaries, jobs (holds kind, status, attempts, last_error, attempt_errors, raw_response, and the lease fields described above), plus users and sessions (reused from the sign-in system) and rate_limit_attempts (the upload rate limit).
+
+**Why a job queue instead of calling the AI directly from the upload request:** an AI call can take several seconds and can fail and need retrying. Doing that inline would make the upload request slow and fragile. Queuing the work lets the upload respond instantly, lets failures retry without the user waiting, and lets the worker enforce a concurrency cap — 3 extractions and 1 summary running at once, enforced at the database level so it holds even across multiple worker processes.
+
+**Other checks on upload:** the endpoint requires a signed-in user and applies a per-user rate limit, returning 429 with Retry-After if exceeded.
+
+**Storage:** files are saved to a local storage/ folder, and only the storage key (not the file itself) is stored in the database — designed for an eventual swap to S3 or similar without changing the data model.
+
 ## What this doesn't handle
 
 ### Gemini free tier: at most 20 receipt extractions per day
