@@ -58,6 +58,22 @@ Full write-up to be completed. Sections below are filled in as the build settles
 
 **Checking what happened:** jobs.last_error, jobs.attempt_errors, and jobs.raw_response (Prisma Studio, port 5558) show exactly what each extraction or categorisation attempt did — including the model's raw reply when it produced one but failed the app's own validation.
 
+## 4. Key Design Decisions
+
+**Two AI providers, split by role.** Gemini handles image extraction (once per receipt); DeepSeek handles categorisation (once per batch). This puts the free-tier model on the higher-volume job and the paid model on the lower-volume one, keeping cost-per-batch low.
+
+**Money is never inferred.** Gemini reports figures it reads directly off the receipt (line items, tax, total). It's allowed to sum tax, tip, and service charge into one tax figure when a receipt lists them separately, but nothing beyond that. All per-category totals are calculated in the app's own code from validated figures — never asked of either AI model.
+
+**Validate the response, don't just trust it.** Both models are asked to return structured JSON, but the app treats that as a request, not a guarantee. Zod validation runs on every response, checking shape, value formats, and — for extraction — that line items plus tax equal the total within a 2% tolerance. This caught a real, valid extraction being wrongly formatted at first, and separately caught a receipt where the model's math didn't add up as expected — both described in the evidence below.
+
+**Only retry errors worth retrying.** Rate limits (429), server overload (503), and timeouts get retried, up to a limit. Everything else — bad requests, bad API keys, invalid model output, billing failures — fails immediately. Retrying those would waste time, money, or scarce daily quota on a call that's guaranteed to fail the same way again.
+
+**Failures degrade gracefully, not silently.** A receipt that can't be extracted is marked as unreadable and left out of the totals — the batch still finishes with everything else intact. A batch whose categorisation step fails entirely still finishes, with every readable receipt shown under "Other" and its exact total — with a note explaining that categorisation wasn't available, not a fake category.
+
+**Every attempt's outcome is kept, not just the last one.** When a job retries, each attempt's error is appended to a list rather than overwriting the previous one. This meant a receipt that eventually succeeded still showed exactly what had gone wrong on earlier tries — useful for diagnosing intermittent failures like Gemini's demand spikes.
+
+**Files are referenced, not embedded.** Uploaded receipts are saved to local storage; only the storage key goes into the database. This keeps the door open to swapping in S3 or similar later without touching the data model.
+
 ## What this doesn't handle
 
 ### Gemini free tier: at most 20 receipt extractions per day
