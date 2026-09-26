@@ -11,7 +11,8 @@ export const aiConfig = {
     temperature: 0,
   },
   summary: {
-    model: "gemini-2.5-flash",
+    // Flash tier is enough for schema-bound categorise+summarise; 3.8 is current stable (2.5 is access-limited for new projects), ~$0.005/call.
+    model: "gemini-3.8-flash",
     timeoutMs: 30_000,
     maxOutputTokens: 1_024,
     temperature: 0.2,
