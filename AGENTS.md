@@ -2,8 +2,8 @@
 
 ## What this repository is
 A graded, time-boxed "slice": upload receipt images, extract structured line items with a
-vision model (DeepSeek `deepseek-flash`), then categorise and summarise the expenses with a
-reasoning model (Gemini via `@google/genai`). Optimise for correctness and explainability.
+vision model (Gemini `gemini-3.8-flash` via `@google/genai`, once per receipt), then categorise and
+summarise each batch with a text model (DeepSeek `deepseek-flash` via the `openai` SDK, once per batch). Optimise for correctness and explainability.
 Separate project from auth-slice and payment-slice.
 
 ## Scope: build ONLY what the assessment brief lists
