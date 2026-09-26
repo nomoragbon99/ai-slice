@@ -109,3 +109,32 @@ Append-only. Never edit or delete past entries.
 - Worker crash on final attempt: lease expiry → job failed, receipt failed, fallback summary.
 - Another user's batch: 404.
 - NOT verified: real Gemini or DeepSeek calls.
+
+### First real upload: Gemini 400 INVALID_ARGUMENT on every extraction attempt (2026-09-26)
+- Symptom: "receipt 1.png" (PNG, 19,200 bytes), uploaded twice, 3 attempts each, all with
+  `ApiError: {"error":{"code":400,"message":"Request contains an invalid argument.","status":"INVALID_ARGUMENT"}}`.
+  Receipts marked failed, "nothing to summarise" fallback shown (fallback worked as designed).
+- Investigation (one-off requests with the owner's key, key never printed; scripts in gitignored tmp/):
+  - image, NO schema → OK (Gemini read "THE BISTRO" from the real receipt): key, model, image fine.
+  - text only + full app schema → 400. Same error without any image: the image is not the cause.
+  - app schema without `$schema` → 400; also with the long date regex replaced by format:date → 400.
+  - minimal schema {merchant: string} → OK; with `anyOf [string, null]` → OK.
+  - `pattern`, `minLength/maxLength`, `maxItems` probes: blocked by quota (below), not yet isolated.
+  - Several probes also got 503 UNAVAILABLE "high demand" (transient, Google side).
+  - Ruled out: bad key (would be API_KEY_INVALID/403), quota (429), network (no HTTP response).
+- Cause: Gemini rejects the JSON Schema Zod generates for extraction. Not the `$schema` key and not
+  (only) the date regex; one of pattern / min-maxLength / maxItems / format remains.
+- Fix: pending owner decision.
+- Commit: pending
+
+### Gemini free tier is 20 requests PER DAY for gemini-3.8-flash (2026-09-26)
+- Symptom: 429 RESOURCE_EXHAUSTED during the diagnosis.
+- Investigation: full error: quotaId `GenerateRequestsPerDayPerProjectPerModel-FreeTier`,
+  quotaValue "20", model gemini-3.8-flash. Its "retry in 41s" is misleading; the quota is daily.
+  Today's 20: 6 from the two uploads (3 retries x 2) and the rest from these probes.
+- Cause: my earlier DECISIONS entry said a handful of receipts is "far below any published free
+  quota". That was wrong: I never saw the per-model number (Google publishes it only in AI Studio).
+  20/day with 3 attempts per receipt means as few as ~6 receipts/day if calls fail.
+- Also found: the worker retries a 400, which can never succeed, using up quota for nothing.
+- Fix: pending owner decision.
+- Commit: pending
