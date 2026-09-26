@@ -76,13 +76,17 @@ Full write-up to be completed. Sections below are filled in as the build settles
 
 ## 5. Security
 
-**Authentication is reused, not reimplemented.** Sign-in and session handling come from auth-slice's system rather than a new implementation, so this project doesn't introduce a second, separately-audited auth path.
+**Authentication is a trimmed copy of auth-slice's code, not a shared module.** Sign-in and sign-out are carried over rather than reimplemented from scratch, but it is a second copy that has to be kept in sync by hand if auth-slice changes.
 
 **Uploads are validated by content, not by what the client claims.** File type is checked from the actual bytes of each uploaded file, not the declared MIME type or file extension — a file renamed to look like an image doesn't bypass the check.
 
 **Upload limits are enforced server-side.** File size and file count per batch are capped in config, and uploads are rate-limited per user, returning 429 with Retry-After when exceeded. This bounds how much a single user can push into the AI pipeline at once, which matters because each upload triggers real, metered API calls.
 
-**API keys never pass through the coding agent.** DEEPSEEK_API_KEY and GEMINI_API_KEY are entered directly into .env by the person running the project — never created, read, or printed by the agent — so they're never exposed in a chat transcript, commit, or log the agent produces.
+**Batches are private to their owner.** A user can only see their own batches — requesting another user's batch id returns 404 from both the API and the page, tested directly.
+
+**Cross-site request protection.** POST routes check the request's Origin header against APP_URL, on top of SameSite=Lax session cookies.
+
+**API keys never pass through the coding agent.** DEEPSEEK_API_KEY and GEMINI_API_KEY are entered directly into .env by the person running the project — never created, opened, or printed by the agent; the agent's diagnostic scripts loaded it into memory to make test calls while debugging the extraction schema, but the key never appeared in any output, commit, or log — so they're never exposed in a chat transcript, commit, or log the agent produces.
 
 **Uploaded files aren't served directly.** Only a storage key is stored in the database; the raw files sit in a local storage/ folder outside of anything served publicly. This also means a compromised database record can't be used to point at an arbitrary file path.
 
