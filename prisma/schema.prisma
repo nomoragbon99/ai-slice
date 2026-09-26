@@ -133,6 +133,10 @@ model Job {
   // The model's raw reply when it came back but failed validation (e.g. line items not adding up),
   // so the failure can be inspected exactly. Null when the call itself failed, and after success.
   rawResponse String?   @map("raw_response")
+  // Every failed attempt, oldest first: [{ attempt, at, error }]. Appended in SQL on each failure
+  // (including a lease that expired mid-attempt) and never cleared, so a job that eventually
+  // succeeds still shows what went wrong before. last_error is only the most recent one.
+  attemptErrors Json    @default("[]") @map("attempt_errors")
   // Not claimable before this time (retry backoff).
   runAfter    DateTime  @default(now()) @map("run_after") @db.Timestamptz
   // While running: the lease. A running job whose lease has passed is treated as abandoned.

@@ -174,3 +174,16 @@ Append-only. Never edit or delete past entries.
   Gemini's actual Bistro reply passing with tax 3.12 and failing without it.
 - NOT verified: that Gemini fills `tax` correctly: next real upload.
 - Commit: feat: extract tax separately and include it in the total check
+
+### Batch a4cb3416: receipt 2 exhausted retries on Gemini 503; earlier attempt errors lost (2026-09-26)
+- Symptom: receipt 2.png extract job, 21:09:39-21:10:09 UTC, 3 attempts, last_error
+  `ApiError: {"error":{"code":503,"message":"This model is currently experiencing high demand. ...","status":"UNAVAILABLE"}}`.
+  receipt 1.png in the same batch succeeded on attempt 2, with last_error NULL.
+- Investigation: last_error is overwritten on every attempt and cleared on success, so the errors
+  of receipt 2's attempts 1-2 and receipt 1's attempt 1 were not recorded anywhere.
+- Cause: only the latest error was stored (design gap, not a bug in the retry logic).
+- Fix: jobs.attempt_errors (JSONB list of { attempt, at, error }), appended in SQL on every failed
+  attempt and when a lease expires mid-attempt; never cleared. Backoff and attempt counts unchanged
+  (owner's decision). scripts/check-attempt-errors.ts: fail-then-succeed keeps attempt 1's error;
+  dead-worker attempt recorded in order; a worker that lost its claim appends nothing.
+- Commit: feat: keep every attempt's error in jobs.attempt_errors

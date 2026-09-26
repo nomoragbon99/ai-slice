@@ -15,7 +15,8 @@
     "db:studio": "prisma studio --port 5558",
     "db:seed": "tsx --env-file=.env scripts/seed.ts",
     "check:validation": "tsx scripts/check-validation.ts",
-    "check:concurrency": "tsx --env-file=.env scripts/check-concurrency.ts"
+    "check:concurrency": "tsx --env-file=.env scripts/check-concurrency.ts",
+    "check:attempt-errors": "tsx --env-file=.env scripts/check-attempt-errors.ts"
   },
   "dependencies": {
     "@google/genai": "^2.24.0",

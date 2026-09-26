@@ -44,8 +44,8 @@ function failureUpdate(job: ClaimedJob, outcome: { error: string; retryable?: bo
       // Always written, so a reply from an earlier attempt is never shown next to a later error.
       rawResponse: outcome.rawResponse?.slice(0, aiConfig.jobs.maxRawResponseChars) ?? null,
     },
-    // Retry time is set from the database clock inside fencedFinish.
-    delay: final ? undefined : retryDelayMs(job.attempts),
+    // Retry time is set from the database clock inside fencedFinish; the error is appended to attempt_errors there.
+    finishOptions: { retryDelayMs: final ? undefined : retryDelayMs(job.attempts), attemptError: error },
   };
 }
 
@@ -80,8 +80,8 @@ export async function runExtract(job: ClaimedJob): Promise<void> {
       settled = true;
       return;
     }
-    const { final, data, delay } = failureUpdate(job, outcome);
-    if (!(await fencedFinish(tx, job, data, delay))) return;
+    const { final, data, finishOptions } = failureUpdate(job, outcome);
+    if (!(await fencedFinish(tx, job, data, finishOptions))) return;
     if (final) {
       await markReceiptUnreadable(tx, receipt.id);
       settled = true;
@@ -184,8 +184,8 @@ export async function runSummarise(job: ClaimedJob): Promise<void> {
       await writeSummary(tx, job.batchId, buildSummary(inputs, categorisation, outcome.value.overview, excluded), aiConfig.summary.model);
       return;
     }
-    const { final, data, delay } = failureUpdate(job, outcome);
-    if (!(await fencedFinish(tx, job, data, delay))) return;
+    const { final, data, finishOptions } = failureUpdate(job, outcome);
+    if (!(await fencedFinish(tx, job, data, finishOptions))) return;
     if (final) await writeSummary(tx, job.batchId, fallbackSummaryText(inputs, excluded), null);
   });
 }

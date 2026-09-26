@@ -45,7 +45,9 @@ export async function claimJobs(kind: JobKind): Promise<{ claimed: ClaimedJob[];
     const abandoned = await tx.$queryRaw<RawJob[]>`
       UPDATE jobs
       SET status = 'failed', locked_until = NULL, updated_at = now(),
-          last_error = coalesce(last_error || ' | ', '') || 'lease expired on final attempt (worker stopped mid-job)'
+          last_error = coalesce(last_error || ' | ', '') || 'lease expired on final attempt (worker stopped mid-job)',
+          attempt_errors = attempt_errors || jsonb_build_array(jsonb_build_object(
+            'attempt', attempts, 'at', now(), 'error', 'lease expired (worker stopped mid-job)'))
       WHERE kind = ${kind} AND status = 'running' AND locked_until <= now() AND attempts >= max_attempts
       RETURNING id, kind, batch_id, receipt_id, attempts, max_attempts
     `;
@@ -60,6 +62,12 @@ export async function claimJobs(kind: JobKind): Promise<{ claimed: ClaimedJob[];
     const claimed = await tx.$queryRaw<RawJob[]>`
       UPDATE jobs
       SET status = 'running', attempts = attempts + 1, updated_at = now(),
+          -- Re-claiming an expired lease: the attempt that was running died without recording anything.
+          -- (Right-hand sides see the row's OLD values, so status/attempts here are before this claim.)
+          attempt_errors = CASE WHEN status = 'running'
+            THEN attempt_errors || jsonb_build_array(jsonb_build_object(
+              'attempt', attempts, 'at', now(), 'error', 'lease expired (worker stopped mid-job)'))
+            ELSE attempt_errors END,
           locked_until = now() + (${leaseMs}::double precision * interval '1 millisecond')
       WHERE id IN (
         SELECT id FROM jobs
@@ -99,11 +107,12 @@ function toClaimed(row: RawJob): ClaimedJob {
 // in which case the caller's transaction must write nothing else (the other claimant owns it now).
 // With retryDelayMs, the job becomes claimable again that long from now by the DATABASE clock, the
 // same clock claimJobs compares against, so app/database clock skew can't shorten or stretch backoff.
+// With attemptError, that error is appended to attempt_errors for this claim's attempt number.
 export async function fencedFinish(
   tx: Tx,
   job: ClaimedJob,
   data: Prisma.JobUpdateManyMutationInput,
-  retryDelayMs?: number,
+  { retryDelayMs, attemptError }: { retryDelayMs?: number; attemptError?: string } = {},
 ): Promise<boolean> {
   const result = await tx.job.updateMany({
     where: { id: job.id, status: "running", attempts: job.attempts },
@@ -113,6 +122,14 @@ export async function fencedFinish(
   if (retryDelayMs !== undefined) {
     await tx.$executeRaw`
       UPDATE jobs SET run_after = now() + (${retryDelayMs}::double precision * interval '1 millisecond') WHERE id = ${job.id}::uuid
+    `;
+  }
+  if (attemptError !== undefined) {
+    await tx.$executeRaw`
+      UPDATE jobs
+      SET attempt_errors = attempt_errors || jsonb_build_array(
+        jsonb_build_object('attempt', ${job.attempts}::int, 'at', now(), 'error', ${attemptError}::text))
+      WHERE id = ${job.id}::uuid
     `;
   }
   return true;
