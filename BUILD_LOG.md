@@ -20,3 +20,11 @@ Append-only. Never edit or delete past entries.
 - Cause: quoting interaction inside one oversized shell command.
 - Fix: wrote each file separately with the editor tool instead.
 - Commit: initial commit
+
+### typecheck failed on a fresh tree: LayoutProps not found (2026-09-26)
+- Symptom: `src/app/layout.tsx(20,50): error TS2304: Cannot find name 'LayoutProps'.`
+- Investigation: lint and `next build` both passed; rerunning `tsc --noEmit` after the build passed.
+- Cause: Next 16 generates the global `LayoutProps` type into .next/types during build/dev,
+  so plain `tsc` fails before either has run.
+- Fix: typecheck script is now `next typegen && tsc --noEmit`; verified from a deleted .next.
+- Commit: fix: generate Next route types before typecheck
