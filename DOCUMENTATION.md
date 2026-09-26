@@ -74,6 +74,20 @@ Full write-up to be completed. Sections below are filled in as the build settles
 
 **Files are referenced, not embedded.** Uploaded receipts are saved to local storage; only the storage key goes into the database. This keeps the door open to swapping in S3 or similar later without touching the data model.
 
+## 5. Security
+
+**Authentication is reused, not reimplemented.** Sign-in and session handling come from auth-slice's system rather than a new implementation, so this project doesn't introduce a second, separately-audited auth path.
+
+**Uploads are validated by content, not by what the client claims.** File type is checked from the actual bytes of each uploaded file, not the declared MIME type or file extension — a file renamed to look like an image doesn't bypass the check.
+
+**Upload limits are enforced server-side.** File size and file count per batch are capped in config, and uploads are rate-limited per user, returning 429 with Retry-After when exceeded. This bounds how much a single user can push into the AI pipeline at once, which matters because each upload triggers real, metered API calls.
+
+**API keys never pass through the coding agent.** DEEPSEEK_API_KEY and GEMINI_API_KEY are entered directly into .env by the person running the project — never created, read, or printed by the agent — so they're never exposed in a chat transcript, commit, or log the agent produces.
+
+**Uploaded files aren't served directly.** Only a storage key is stored in the database; the raw files sit in a local storage/ folder outside of anything served publicly. This also means a compromised database record can't be used to point at an arbitrary file path.
+
+**Model replies are never trusted as-is.** Every response from Gemini or DeepSeek is validated (shape, formats, consistency checks) before it's used anywhere — including before it's shown to a user or summed into a total. A model returning malformed, incomplete, or inconsistent data fails cleanly instead of corrupting a batch's results.
+
 ## What this doesn't handle
 
 ### Gemini free tier: at most 20 receipt extractions per day
