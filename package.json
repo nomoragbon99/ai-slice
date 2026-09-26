@@ -12,10 +12,14 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "prisma migrate dev && prisma generate",
-    "db:studio": "prisma studio --port 5558"
+    "db:studio": "prisma studio --port 5558",
+    "db:seed": "tsx --env-file=.env scripts/seed.ts",
+    "check:validation": "tsx scripts/check-validation.ts",
+    "check:concurrency": "tsx --env-file=.env scripts/check-concurrency.ts"
   },
   "dependencies": {
     "@google/genai": "^2.24.0",
+    "@node-rs/argon2": "^2.2.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "next": "16.3.5",

@@ -39,3 +39,6 @@ coverage/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local object-storage stand-in (uploaded receipt images) -- never committed
+/storage/

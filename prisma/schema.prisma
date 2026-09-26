@@ -1,5 +1,10 @@
 // The connection URL lives in prisma.config.ts (Prisma 7 no longer reads it here).
-// Models are added with the first feature; files are never stored here, only storage keys.
+// snake_case table/column names via @@map/@map so the SQL layer reads naturally in psql.
+//
+// Enum-like columns are text + a CHECK constraint (added in the migration SQL), not Prisma enums:
+// a CHECK changes with one ALTER TABLE, a Postgres enum type is awkward to change.
+// Money is always an integer in minor units with its currency stored beside it.
+// Files are never stored here: only the storage key that points into src/lib/storage.ts.
 
 generator client {
   provider = "prisma-client"
@@ -8,4 +13,146 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ───────── users + sessions: REUSED from auth-slice via payment-slice (permitted by the brief) ─────────
+// Only what sign-in needs: no email verification, password reset or sign-up tables.
+model User {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // CHECK email = lower(btrim(email)).
+  email        String   @unique
+  // CHECK char_length(name) BETWEEN 1 AND 80.
+  name         String
+  // Argon2id encoded hash.
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  sessions Session[]
+  batches  Batch[]
+
+  @@map("users")
+}
+
+model Session {
+  // SHA-256 hex of the cookie token, never the token itself.
+  id        String   @id
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// Sliding-window rate limiter rows, same mechanism as payment-slice (src/lib/security/rate-limit.ts).
+model RateLimitAttempt {
+  id  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // e.g. "upload:user:<user id>".
+  key String
+  // Database clock, clock_timestamp() so a request that waited for the lock is stamped correctly.
+  at  DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz
+
+  @@index([key, at])
+  @@map("rate_limit_attempts")
+}
+
+// ───────── one upload = one batch = one summary ─────────
+model Batch {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // CHECK status IN ('extracting', 'summarising', 'done').
+  // There is no 'failed': every failure path ends in a fallback summary, so a batch always finishes.
+  status    String   @default("extracting")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  receipts Receipt[]
+  jobs     Job[]
+  summary  Summary?
+
+  @@index([userId, createdAt])
+  @@map("batches")
+}
+
+model Receipt {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId    String @map("batch_id") @db.Uuid
+  batch      Batch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  // Where the image lives in storage (src/lib/storage.ts). The bytes are never in the database.
+  storageKey String @unique @map("storage_key")
+  // Type detected from the file's first bytes, not the browser's claim.
+  mimeType   String @map("mime_type")
+  // CHECK size_bytes > 0.
+  sizeBytes  Int    @map("size_bytes")
+  // Name as uploaded, for display only. Never used to build a path.
+  fileName   String @map("file_name")
+
+  // CHECK status IN ('pending', 'extracted', 'failed').
+  status        String    @default("pending")
+  // Validated extraction output (src/lib/validation/extraction.ts); null until extracted.
+  extractedJson Json?     @map("extracted_json")
+  merchant      String?
+  receiptDate   DateTime? @map("receipt_date") @db.Date
+  // CHECK total_minor >= 0. Null until extracted.
+  totalMinor    Int?      @map("total_minor")
+  // ISO 4217, CHECK currency ~ '^[A-Z]{3}$'. Set together with total_minor (CHECK both null or both set).
+  currency      String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  jobs Job[]
+
+  @@index([batchId])
+  @@map("receipts")
+}
+
+// ───────── background work queue, processed by src/lib/jobs/worker.ts ─────────
+model Job {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // CHECK kind IN ('extract', 'summarise').
+  kind      String
+  batchId   String   @map("batch_id") @db.Uuid
+  batch     Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  // Set for 'extract' jobs only (CHECK (kind = 'extract') = (receipt_id IS NOT NULL)).
+  receiptId String?  @map("receipt_id") @db.Uuid
+  receipt   Receipt? @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  // Makes "queue the summary for this batch" safe to call twice: "summarise:<batch id>".
+  dedupeKey String?  @unique @map("dedupe_key")
+
+  // CHECK status IN ('queued', 'running', 'succeeded', 'failed').
+  status      String    @default("queued")
+  // Incremented when a worker claims the job; also used as the fencing value when it finishes.
+  // CHECK attempts >= 0 AND attempts <= max_attempts.
+  attempts    Int       @default(0)
+  maxAttempts Int       @map("max_attempts")
+  lastError   String?   @map("last_error")
+  // Not claimable before this time (retry backoff).
+  runAfter    DateTime  @default(now()) @map("run_after") @db.Timestamptz
+  // While running: the lease. A running job whose lease has passed is treated as abandoned.
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([kind, status, runAfter])
+  @@index([receiptId])
+  @@index([batchId])
+  @@map("jobs")
+}
+
+model Summary {
+  batchId     String   @id @map("batch_id") @db.Uuid
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  // Validated summary (src/lib/validation/summary.ts).
+  summaryJson Json     @map("summary_json")
+  // CHECK source IN ('model', 'fallback'). 'fallback' = built in code after the model failed.
+  source      String
+  // The model that produced it; null for a fallback summary.
+  modelId     String?  @map("model_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("summaries")
 }
