@@ -138,3 +138,18 @@ Append-only. Never edit or delete past entries.
 - Also found: the worker retries a 400, which can never succeed, using up quota for nothing.
 - Fix: pending owner decision.
 - Commit: pending
+
+### Resolution: Gemini 400 and quota entries above (2026-09-26)
+- Fix (commit 5b67f70): Gemini now gets a shape-only schema (type/properties/required/anyOf/items);
+  Zod still enforces every value rule. Only 429, 503 and timeouts are retried; anything else fails
+  on attempt 1 with "(not retried)". Free-tier 20/day accepted by the owner and documented
+  (DECISIONS.md, DOCUMENTATION.md "What this doesn't handle").
+- Quota reset confirmed from Google's docs: "Requests per day (RPD) quotas reset at midnight Pacific
+  time". Next reset: 2026-09-26 07:00 UTC (08:00 in the owner's UTC+1 zone).
+- Verified without keys (key-less clone, as before): check:validation 8/8 (adds retry classification
+  using the real SDK error classes, and a guard against value keywords in the Gemini schema);
+  check:concurrency ok; fake/none/unauth uploads rejected; missing Gemini key → 1 attempt, not 3;
+  missing DeepSeek key → 1 attempt, fallback 2050 USD; crashed final attempt → fallback.
+- NOT verified: Gemini accepting the new schema. It can't be tested until the quota resets. Arrays
+  and booleans in the schema are first exercised by that real upload.
+- Commit: 5b67f70 + docs commit

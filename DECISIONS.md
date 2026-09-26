@@ -129,6 +129,45 @@
 - Files: src/config/ai.ts, src/lib/ai/gemini.ts, src/lib/ai/deepseek.ts,
   src/lib/validation/extraction.ts, src/lib/validation/summary.ts, src/lib/jobs/handlers.ts
 
+### Gemini free tier: 20 requests/day accepted as a permanent design limit (2026-09-26)
+- Correction: the "gemini-3.8-flash stays: confirmed $0" entry said a handful of receipts per session
+  is "far below any published free quota". That was wrong. The real limit, from Google's own 429
+  response: quotaId `GenerateRequestsPerDayPerProjectPerModel-FreeTier`, value 20, model
+  gemini-3.8-flash. It is per project, per model, per day, and resets at midnight Pacific time
+  (ai.google.dev/gemini-api/docs/rate-limits: "Requests per day (RPD) quotas reset at midnight Pacific time").
+- Chosen (owner's decision): stay on the free tier and live with it. This is a constraint of the
+  design, not a bug: at most 20 extraction calls per day, i.e. at most 20 receipts/day, fewer if
+  429/503/timeouts cause retries (up to 3 calls for one receipt).
+- What happens at the cap: Gemini answers 429; the job is retried with backoff (a rejected request
+  does not use quota) and then fails; the receipt shows as unreadable and the batch still finishes
+  with a fallback summary. Nothing is lost except that receipt's extraction.
+- Rejected: attaching billing (~$0.005/receipt, no daily cap) and swapping extraction back to
+  DeepSeek (paid, no daily cap). Either removes the limit if it becomes a problem.
+- Files: src/config/ai.ts, DOCUMENTATION.md ("What this doesn't handle")
+
+### Gemini receives a shape-only JSON schema; Zod enforces the values (2026-09-26)
+- Why: Gemini answered 400 INVALID_ARGUMENT to the full schema z.toJSONSchema generated (patterns,
+  length limits, maxItems, format), with and without the image (BUILD_LOG.md).
+- Chosen: a hand-written schema with structural keywords only (type, properties, required,
+  anyOf-for-null, items). Every value rule (decimal format, ISO currency, ISO date, lengths, item
+  cap, line items adding up) stays in rawExtractionSchema, which validates the response.
+  scripts/check-validation.ts fails if a value keyword is ever added to the Gemini schema.
+- Trade-off: the model is steered less, so a malformed value is caught by Zod rather than
+  prevented; that receipt fails (invalid output is not retried).
+- Rejected: probing further to find the exact rejected keyword (costs daily quota; the fix is the
+  same either way).
+- Files: src/lib/validation/extraction.ts, src/lib/ai/gemini.ts
+
+### Retry only 429, 503 and timeouts (2026-09-26)
+- Chosen: src/lib/ai/errors.ts classifies failures. 429 (rate/quota), 503 (overloaded) and timeouts
+  are retried with backoff up to max_attempts; everything else fails on the first attempt and
+  last_error ends in "(not retried)".
+- Why: a 400, a bad or missing key, or invalid model output (temperature 0 / 0.2: same input, same
+  answer) cannot succeed on retry; retrying only spent 3 of the 20 daily requests per receipt.
+- Consequence to know: other transient failures (HTTP 500/502/504, a dropped connection) are
+  also not retried under this rule. Adding them is a one-line change to RETRYABLE_STATUS.
+- Files: src/lib/ai/errors.ts, src/lib/jobs/handlers.ts
+
 ## Deliberately excluded
 - Deleting batches or receipt images: not in the brief.
 - Editing an extraction by hand: not in the brief.
