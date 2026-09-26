@@ -28,3 +28,11 @@ Append-only. Never edit or delete past entries.
   so plain `tsc` fails before either has run.
 - Fix: typecheck script is now `next typegen && tsc --noEmit`; verified from a deleted .next.
 - Commit: fix: generate Next route types before typecheck
+
+### DECISIONS.md entry missing from model-choice commit (2026-09-26)
+- Symptom: `Python was not found` while appending the entry; the commit went ahead with only src/config/ai.ts.
+- Investigation: the script used `python`; this machine has no Python, only the Microsoft Store alias.
+  The chained commit did not depend on the script's exit status.
+- Cause: assumed Python was available, and the commands weren't chained on the script succeeding.
+- Fix: added the entry with the editor tool in a follow-up commit. Use Node or the editor for file edits here.
+- Commit: docs: log Gemini model decision

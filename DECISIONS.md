@@ -20,4 +20,24 @@
 - Rejected: defaults 3000/5432/5555 (5432 is notebound-postgres, 5555 is auth-slice's Studio).
 - Files: package.json, docker-compose.yml
 
+### Gemini model for categorisation/summary: gemini-3.8-flash (2026-09-26)
+- Decision: which Gemini model turns DeepSeek's extracted receipt JSON into a categorised,
+  structured expense summary (moderate reasoning: grouping, category judgement, totals narrative).
+- Chosen: `gemini-3.8-flash` (current stable Flash; $0.75 in / $3.75 out per 1M tokens, free tier available).
+- Cost at our volume: ~2k input + ~1k output tokens per call ≈ $0.005/call; a test session of
+  a few receipts costs well under $0.05. Cost does not decide between the candidates.
+- Rejected:
+  - `gemini-2.5-flash` (the original placeholder): Google's models page says 2.5 models have
+    limited access and new projects should use 3.5 Flash-Lite or 3.8 Flash.
+  - `gemini-3.5-flash-lite` ($0.30 / $2.50): cheapest and fastest, and a reasonable fallback,
+    but it is aimed at high-volume simple tasks. Picking categories for ambiguous line items is
+    the one place a weaker model visibly fails, and at a few calls per session the saving is negligible.
+  - `gemini-3.1-pro-preview` ($2 / $12, no free tier, preview): pro-tier reasoning is not needed
+    for a schema-bound task over at most a few hundred tokens of input, and it would add latency,
+    cost and preview-instability risk.
+- Unverified: latency was not measured (no key yet). JSON-schema output and the thinking-level
+  setting on 3.8 Flash get confirmed on the first real call and logged in BUILD_LOG.md.
+- Source: ai.google.dev/gemini-api/docs/pricing and /models, read 2026-09-26 (prices valid to 2026-12-31).
+- Files: src/config/ai.ts
+
 ## Deliberately excluded
