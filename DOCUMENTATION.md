@@ -37,6 +37,26 @@ Full write-up to be completed. Sections below are filled in as the build settles
 
 **Storage:** files are saved to a local storage/ folder, and only the storage key (not the file itself) is stored in the database — designed for an eventual swap to S3 or similar without changing the data model.
 
+## 3. Setup & Running Locally
+
+**Requirements:** Node.js, Docker (for PostgreSQL), a Gemini API key (aistudio.google.com — free tier), and a DeepSeek API key with credit added (platform.deepseek.com).
+
+**Steps:**
+
+1. Clone the repo and install dependencies: npm install.
+2. Copy .env.example to .env and fill in the values by hand — DATABASE_URL, APP_URL, DEEPSEEK_API_KEY, GEMINI_API_KEY. The app never creates, reads, or prints this file; it's set up manually to keep API keys out of anything the agent touches.
+3. Start the database: docker compose up -d. This runs PostgreSQL on port 5435, separate from auth-slice (5433) and payment-slice (5434), so all three can run at the same time without colliding.
+4. Run migrations: npx prisma migrate deploy.
+5. Start the app: npm run dev. It runs on http://localhost:3003.
+6. Sign in with a seeded test account (e.g. alice@example.com / ai-slice-test-1) and upload a receipt image to test the pipeline.
+
+**Two things to know before testing:**
+
+1. Gemini's free tier caps out at 20 requests per day, per project, per model. Each receipt uploaded uses one request. The cap resets at midnight Pacific time.
+2. DeepSeek has no free tier. The account behind DEEPSEEK_API_KEY needs a small positive balance before the categorisation step will work — a call without one fails with a 402 Insufficient Balance error, and the app falls back to putting every receipt under "Other" rather than failing the whole batch.
+
+**Checking what happened:** jobs.last_error, jobs.attempt_errors, and jobs.raw_response (Prisma Studio, port 5558) show exactly what each extraction or categorisation attempt did — including the model's raw reply when it produced one but failed the app's own validation.
+
 ## What this doesn't handle
 
 ### Gemini free tier: at most 20 receipt extractions per day
