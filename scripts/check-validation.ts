@@ -3,9 +3,12 @@
 // Run with: npm run check:validation
 import assert from "node:assert/strict";
 import { toMinorUnits } from "../src/lib/money";
-import { parseExtraction } from "../src/lib/validation/extraction";
+import { parseExtraction, rawExtractionJsonSchema } from "../src/lib/validation/extraction";
 import { buildSummary, parseModelSummary } from "../src/lib/validation/summary";
 import { detectImageType } from "../src/lib/validation/upload";
+import { isRetryableProviderError } from "../src/lib/ai/errors";
+import { ApiError } from "@google/genai";
+import { APIConnectionTimeoutError, APIError, APIUserAbortError } from "openai";
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -89,6 +92,41 @@ check("image type comes from the bytes, not the name", () => {
   assert.equal(detectImageType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])), "image/jpeg");
   assert.equal(detectImageType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), "image/png");
   assert.equal(detectImageType(new TextEncoder().encode("<html>not an image")), null);
+});
+
+check("only 429, 503 and timeouts are retried", () => {
+  const gemini = (status: number) => new ApiError({ message: "x", status });
+  const openai = (status: number) => APIError.generate(status, undefined, "x", new Headers());
+  assert.equal(isRetryableProviderError(gemini(400)), false); // the schema rejection we hit
+  assert.equal(isRetryableProviderError(gemini(403)), false); // bad key
+  assert.equal(isRetryableProviderError(gemini(429)), true);
+  assert.equal(isRetryableProviderError(gemini(503)), true);
+  assert.equal(isRetryableProviderError(openai(401)), false);
+  assert.equal(isRetryableProviderError(openai(429)), true);
+  assert.equal(isRetryableProviderError(openai(503)), true);
+  assert.equal(isRetryableProviderError(openai(500)), false);
+  assert.equal(isRetryableProviderError(new APIConnectionTimeoutError()), true);
+  assert.equal(isRetryableProviderError(new APIUserAbortError()), true);
+  assert.equal(isRetryableProviderError(new DOMException("signal timed out", "TimeoutError")), true);
+  assert.equal(isRetryableProviderError(new Error("GEMINI_API_KEY is not set")), false); // missing key
+});
+
+check("the schema sent to Gemini uses structural keywords only (no pattern/length/format)", () => {
+  const allowed = new Set(["type", "properties", "required", "anyOf", "items"]);
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (node && typeof node === "object") {
+      for (const [key, value] of Object.entries(node)) {
+        if (key === "properties") {
+          Object.values(value as object).forEach(walk);
+          continue;
+        }
+        assert.ok(allowed.has(key), `keyword "${key}" is not structural; Gemini rejected value keywords with 400`);
+        walk(value);
+      }
+    }
+  };
+  walk(rawExtractionJsonSchema);
 });
 
 console.log(`\n${passed} checks passed`);

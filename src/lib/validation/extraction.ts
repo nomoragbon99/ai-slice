@@ -19,9 +19,37 @@ export const rawExtractionSchema = z.object({
     .max(100),
 });
 
-// JSON Schema sent to Gemini as responseJsonSchema, derived from the Zod schema so the two can't
-// drift apart. io: "input" describes what the model must SEND (before trim/uppercase run).
-export const rawExtractionJsonSchema = z.toJSONSchema(rawExtractionSchema, { io: "input" });
+// JSON Schema sent to Gemini as responseJsonSchema: SHAPE ONLY (field names, types, required, nullable).
+// Gemini answered 400 INVALID_ARGUMENT to the full schema z.toJSONSchema generates (patterns, length
+// limits, maxItems, format; see BUILD_LOG.md), so every value rule lives in rawExtractionSchema above,
+// which checks the response. This schema only steers the model; Zod is the enforcement.
+// Structural keywords only: type, properties, required, anyOf (for null), items. A real call
+// confirmed the first four; arrays/booleans follow the same standard subset but are first
+// exercised by the next real upload. Value formats are described in the system instruction instead.
+// Kept next to rawExtractionSchema so a field added there is added here in the same edit.
+const nullableString = { anyOf: [{ type: "string" }, { type: "null" }] };
+export const rawExtractionJsonSchema = {
+  type: "object",
+  properties: {
+    is_receipt: { type: "boolean" },
+    merchant: nullableString,
+    date: nullableString,
+    currency: { type: "string" },
+    total: { type: "string" },
+    line_items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          description: { type: "string" },
+          amount: { type: "string" },
+        },
+        required: ["description", "amount"],
+      },
+    },
+  },
+  required: ["is_receipt", "merchant", "date", "currency", "total", "line_items"],
+} as const;
 
 export type ExtractedReceipt = {
   merchant: string | null;

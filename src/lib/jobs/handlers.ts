@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getObject } from "@/lib/storage";
 import { extractReceiptText } from "@/lib/ai/gemini";
 import { summariseText } from "@/lib/ai/deepseek";
+import { isRetryableProviderError } from "@/lib/ai/errors";
 import { parseExtraction } from "@/lib/validation/extraction";
 import {
   buildSummary,
@@ -18,19 +19,22 @@ import { errorText, fencedFinish, retryDelayMs, type ClaimedJob, type Tx } from 
 //   2. in one transaction, fence on the claim and write the outcome (result, retry, or fallback);
 //   3. after commit, move the batch forward if this settled a receipt.
 
-type Outcome<T> = { ok: true; value: T } | { ok: false; error: string };
+// retryable: false unless the failure is one that can clear by itself (src/lib/ai/errors.ts).
+// Invalid model output is not retried: temperature is low, so the same input gives the same answer.
+type Outcome<T> = { ok: true; value: T } | { ok: false; error: string; retryable?: boolean };
 
 async function attempt<T>(work: () => Promise<Outcome<T>>): Promise<Outcome<T>> {
   try {
     return await work();
   } catch (error) {
     // Timeouts, network errors, missing key, provider 4xx/5xx: all end up here as one error text.
-    return { ok: false, error: errorText(error) };
+    return { ok: false, error: errorText(error), retryable: isRetryableProviderError(error) };
   }
 }
 
-function failureUpdate(job: ClaimedJob, error: string) {
-  const final = job.attempts >= job.maxAttempts;
+function failureUpdate(job: ClaimedJob, outcome: { error: string; retryable?: boolean }) {
+  const error = outcome.retryable ? outcome.error : `${outcome.error} (not retried)`;
+  const final = !outcome.retryable || job.attempts >= job.maxAttempts;
   return {
     final,
     data: { status: final ? "failed" : "queued", lastError: error },
@@ -70,7 +74,7 @@ export async function runExtract(job: ClaimedJob): Promise<void> {
       settled = true;
       return;
     }
-    const { final, data, delay } = failureUpdate(job, outcome.error);
+    const { final, data, delay } = failureUpdate(job, outcome);
     if (!(await fencedFinish(tx, job, data, delay))) return;
     if (final) {
       await markReceiptUnreadable(tx, receipt.id);
@@ -174,7 +178,7 @@ export async function runSummarise(job: ClaimedJob): Promise<void> {
       await writeSummary(tx, job.batchId, buildSummary(inputs, categorisation, outcome.value.overview, excluded), aiConfig.summary.model);
       return;
     }
-    const { final, data, delay } = failureUpdate(job, outcome.error);
+    const { final, data, delay } = failureUpdate(job, outcome);
     if (!(await fencedFinish(tx, job, data, delay))) return;
     if (final) await writeSummary(tx, job.batchId, fallbackSummaryText(inputs, excluded), null);
   });
