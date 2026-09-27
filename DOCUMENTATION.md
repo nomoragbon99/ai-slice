@@ -128,3 +128,19 @@ The scenarios below were run against the running app with real API calls to Gemi
 **Category list is fixed and small.** The six categories (Food, Transport, Utilities, Office, Entertainment, Other) are hardcoded in config. A receipt that doesn't cleanly fit one (a mixed grocery-and-pharmacy run, for example) gets whichever category DeepSeek judges closest, with no way for a user to correct it after the fact.
 
 **No automated test suite in the traditional sense.** Correctness is verified through real, manual end-to-end runs (documented in Section 6) plus a handful of targeted scripts (check:concurrency, check:attempt-errors, check:validation) rather than a full unit/integration test suite. This matched the project's pace, but a production version would want broader automated coverage.
+
+## 8. What I'd Do Differently / Next Steps
+
+**Isolate the Gemini schema constraint properly.** The 400 error was fixed by simplifying the schema wholesale, without ever confirming exactly which rule Gemini rejected. Next time, I'd binary-search the schema systematically (removing one constraint at a time, retesting after each) rather than stopping once a working version was found — this would leave a more precise, reusable understanding of what Gemini's structured-output API actually accepts.
+
+**Move file storage to S3 (or similar) before this goes further than a demo.** The data model already supports it — only the storage key is in the database — so this is a low-risk change whenever it's needed, but local storage isn't viable beyond a single-machine demo.
+
+**Add a combined view across batches.** Right now every batch is analyzed in isolation. A real user would want to see total spending by category across a week or month, not just per upload. This is mostly a query and a new page, since the underlying data (categorized, validated receipts) is already there.
+
+**Reconsider the AI provider split now that it's shown its edges.** The Gemini 20/day free-tier cap and DeepSeek's no-free-tier billing are both real constraints discovered during testing, not anticipated at design time. A production version would need to budget for both — either paid Gemini access, or accepting that some capacity for other things.
+
+**Share the auth code with auth-slice instead of duplicating it.** Right now sign-in and sign-out are a hand-copied subset. Extracting a shared package would mean a fix to one flows to both, rather than needing to be ported by hand.
+
+**Let users correct a wrong or missing category.** DeepSeek's categorization is one-shot with no way for a user to override it if it's wrong or if a receipt doesn't cleanly fit a category. A simple manual override would close that gap without much complexity.
+
+**Add real automated tests.** The project relied on real end-to-end runs plus a few targeted scripts. That was fast and caught real bugs, but a production version would want unit and integration coverage that runs on every change, not just when someone remembers to test manually.
