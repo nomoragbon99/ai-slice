@@ -113,6 +113,22 @@ The scenarios below were run against the running app with real API calls to Gemi
 1. **Schema rejection (400):** Gemini rejected the original extraction request outright because the JSON schema sent to it included value-level constraints (the exact constraint was not isolated before the daily quota ran out mid-investigation — narrowed to something in the value-level rules, not the field names or types themselves) it doesn't accept. Fixed by simplifying the outbound schema to shape-only, keeping all value validation in the app's own Zod checks after the response arrives.
 2. **False-positive validation failure:** The line-item consistency check rejected a correct extraction because it compared item totals against a tax-inclusive total, without knowing about tax. Diagnosed using a saved raw model reply (added specifically to debug this), which showed the model's numbers were right and the check was wrong. Fixed by adding a tax field and checking items + tax against the total.
 
+## 7. Known Limitations & Trade-offs
+
+**Gemini's free tier caps extraction at 20 requests per day.** Every receipt uploaded uses one of those requests (up to 3 if it retries). This is fine for a demo or light personal use, but it doesn't scale — a real multi-user product would need a paid Gemini tier or a different vision provider.
+
+**File storage is local, not cloud-based.** Uploaded receipts sit in a local storage/ folder. Only the storage key is in the database, by design, so swapping in S3 or similar later doesn't require a data model change — but as it stands, files don't survive a redeploy to a different machine, and there's no CDN or backup.
+
+**The exact Gemini schema rejection was never fully isolated.** The fix (a shape-only outbound schema) works — proven by every successful extraction since — but the specific constraint Gemini rejected (a length limit, a regex pattern, the item cap, or the date format hint) was never pinned down, because the daily quota ran out mid-investigation. If a future schema change reintroduces a similar rule, the same class of failure could reappear without an obvious cause.
+
+**Authentication is a duplicated, not shared, codebase.** Sign-in and sign-out are copied from auth-slice rather than referencing a shared module. Any future fix or improvement to auth-slice's sign-in flow won't automatically apply here — it would need to be ported by hand.
+
+**No email or export feature.** The app shows a categorised summary in the browser, but there's no way to email a report, export to CSV, or view spending history across multiple batches over time — each batch stands alone.
+
+**Category list is fixed and small.** The six categories (Food, Transport, Utilities, Office, Entertainment, Other) are hardcoded in config. A receipt that doesn't cleanly fit one (a mixed grocery-and-pharmacy run, for example) gets whichever category DeepSeek judges closest, with no way for a user to correct it after the fact.
+
+**No automated test suite in the traditional sense.** Correctness is verified through real, manual end-to-end runs (documented in Section 6) plus a handful of targeted scripts (check:concurrency, check:attempt-errors, check:validation) rather than a full unit/integration test suite. This matched the project's pace, but a production version would want broader automated coverage.
+
 ## What this doesn't handle
 
 ### Gemini free tier: at most 20 receipt extractions per day
