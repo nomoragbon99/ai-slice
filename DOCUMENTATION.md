@@ -94,7 +94,7 @@ Full write-up to be completed. Sections below are filled in as the build settles
 
 ## 6. Testing & Evidence
 
-The scenarios below were run against the running app with real API calls to Gemini and DeepSeek — no synthetic or mocked responses. Separately, the concurrency cap, per-attempt error logging, and missing-key fallback were verified with scripted checks (check:concurrency, check:attempt-errors, check:validation) that exercise the queue logic directly without live API calls.
+The scenarios below were run against the running app with real API calls to Gemini and DeepSeek — no synthetic or mocked responses. Separately, the concurrency cap, per-attempt error logging, and missing-key fallback were verified with scripted checks (check:concurrency, check:attempt-errors, check:validation) that exercise the queue logic directly, and the missing-key fallback was verified separately by running the app from a clone with no .env set — none of this involved live API calls.
 
 **Single receipt, end to end.** Uploaded a real restaurant receipt (THE BISTRO, $42.07 including 8% tax). Extraction, validation, and categorisation all succeeded, correctly labeling it Food with a one-sentence reason.
 
