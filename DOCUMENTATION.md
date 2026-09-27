@@ -1,6 +1,6 @@
 # AI Slice: receipts to expense summary
 
-Full write-up to be completed. Sections below are filled in as the build settles.
+A receipts-to-expense-summary pipeline using two AI providers (Gemini for extraction, DeepSeek for categorisation), built and documented end to end.
 
 ## 1. Overview
 
@@ -137,7 +137,7 @@ The scenarios below were run against the running app with real API calls to Gemi
 
 **Add a combined view across batches.** Right now every batch is analyzed in isolation. A real user would want to see total spending by category across a week or month, not just per upload. This is mostly a query and a new page, since the underlying data (categorized, validated receipts) is already there.
 
-**Reconsider the AI provider split now that it's shown its edges.** The Gemini 20/day free-tier cap and DeepSeek's no-free-tier billing are both real constraints discovered during testing, not anticipated at design time. A production version would need to budget for both — either paid Gemini access, or accepting that some capacity for other things.
+**Reconsider the AI provider split now that it's shown its edges.** The Gemini 20/day free-tier cap and DeepSeek's no-free-tier billing are both real constraints discovered during testing, not anticipated at design time. A production version would need to budget for both — either paid Gemini access, or accepting the 20/day ceiling as a hard limit on how many receipts the app can process daily.
 
 **Share the auth code with auth-slice instead of duplicating it.** Right now sign-in and sign-out are a hand-copied subset. Extracting a shared package would mean a fix to one flows to both, rather than needing to be ported by hand.
 
