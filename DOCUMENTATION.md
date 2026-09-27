@@ -115,7 +115,7 @@ The scenarios below were run against the running app with real API calls to Gemi
 
 ## 7. Known Limitations & Trade-offs
 
-**Gemini's free tier caps extraction at 20 requests per day.** Every receipt uploaded uses one of those requests (up to 3 if it retries). This is fine for a demo or light personal use, but it doesn't scale — a real multi-user product would need a paid Gemini tier or a different vision provider.
+**Gemini's free tier caps extraction at 20 requests per day (GenerateRequestsPerDayPerProjectPerModel-FreeTier), resetting at midnight Pacific time.** Every receipt uploaded uses one of those requests (up to 3 if it retries). Hitting the cap marks the affected receipts as unreadable rather than failing the whole batch. This is fine for a demo or light personal use, but it doesn't scale — a real multi-user product would need a paid Gemini tier or a different vision provider. Note also that Google may use free-tier images to improve its products, per Gemini's free-tier terms.
 
 **File storage is local, not cloud-based.** Uploaded receipts sit in a local storage/ folder. Only the storage key is in the database, by design, so swapping in S3 or similar later doesn't require a data model change — but as it stands, files don't survive a redeploy to a different machine, and there's no CDN or backup.
 
@@ -123,27 +123,8 @@ The scenarios below were run against the running app with real API calls to Gemi
 
 **Authentication is a duplicated, not shared, codebase.** Sign-in and sign-out are copied from auth-slice rather than referencing a shared module. Any future fix or improvement to auth-slice's sign-in flow won't automatically apply here — it would need to be ported by hand.
 
-**No email or export feature.** The app shows a categorised summary in the browser, but there's no way to email a report, export to CSV, or view spending history across multiple batches over time — each batch stands alone.
+**No email or export feature.** The app shows a categorised summary in the browser, but there's no way to email a report, export to CSV, or view a combined spending total across batches — the dashboard lists your 10 most recent uploads with date, receipt count, and status, each linking to its own summary, but there's no combined view across them.
 
 **Category list is fixed and small.** The six categories (Food, Transport, Utilities, Office, Entertainment, Other) are hardcoded in config. A receipt that doesn't cleanly fit one (a mixed grocery-and-pharmacy run, for example) gets whichever category DeepSeek judges closest, with no way for a user to correct it after the fact.
 
 **No automated test suite in the traditional sense.** Correctness is verified through real, manual end-to-end runs (documented in Section 6) plus a handful of targeted scripts (check:concurrency, check:attempt-errors, check:validation) rather than a full unit/integration test suite. This matched the project's pace, but a production version would want broader automated coverage.
-
-## What this doesn't handle
-
-### Gemini free tier: at most 20 receipt extractions per day
-Receipt images are read by `gemini-3.8-flash` on Google's free tier, which allows **20 requests per
-day, per project, for this model**. Google enforces this (quota id
-`GenerateRequestsPerDayPerProjectPerModel-FreeTier`) and resets it at **midnight Pacific time**
-(07:00 UTC while Pacific daylight time is in effect, 08:00 UTC otherwise).
-
-- One receipt normally costs one request. A receipt whose call hits a rate limit (429), an overload
-  (503) or a timeout can be retried, using up to 3 requests.
-- Once the day's 20 are used, extraction calls are rejected with 429. Those receipts show as
-  "couldn't be read" and are left out of the totals; the batch still completes with a summary
-  of whatever was read. Nothing is retried the next day automatically; the receipts must be uploaded again.
-- This is a deliberate trade-off (free extraction) and a permanent property of this design, not a
-  bug. Removing it means attaching billing to the Google project (about $0.005 per receipt) or
-  moving extraction to a paid provider. See DECISIONS.md.
-- Free-tier requests may be used by Google to improve its products, so real (non-test) receipts
-  should not be sent under this configuration.
