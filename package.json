@@ -16,7 +16,8 @@
     "db:seed": "tsx --env-file=.env scripts/seed.ts",
     "check:validation": "tsx scripts/check-validation.ts",
     "check:concurrency": "tsx --env-file=.env scripts/check-concurrency.ts",
-    "check:attempt-errors": "tsx --env-file=.env scripts/check-attempt-errors.ts"
+    "check:attempt-errors": "tsx --env-file=.env scripts/check-attempt-errors.ts",
+    "demo:broken-validation": "tsx scripts/show-broken-validation.ts"
   },
   "dependencies": {
     "@google/genai": "^2.24.0",
