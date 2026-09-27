@@ -143,7 +143,7 @@
   with a fallback summary. Nothing is lost except that receipt's extraction.
 - Rejected: attaching billing (~$0.005/receipt, no daily cap) and swapping extraction back to
   DeepSeek (paid, no daily cap). Either removes the limit if it becomes a problem.
-- Files: src/config/ai.ts, DOCUMENTATION.md ("What this doesn't handle")
+- Files: src/config/ai.ts, DOCUMENTATION.md (Section 7, Known Limitations & Trade-offs)
 
 ### Gemini receives a shape-only JSON schema; Zod enforces the values (2026-09-26)
 - Why: Gemini answered 400 INVALID_ARGUMENT to the full schema z.toJSONSchema generated (patterns,
