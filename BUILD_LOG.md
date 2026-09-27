@@ -187,3 +187,64 @@ Append-only. Never edit or delete past entries.
   (owner's decision). scripts/check-attempt-errors.ts: fail-then-succeed keeps attempt 1's error;
   dead-worker attempt recorded in order; a worker that lost its claim appends nothing.
 - Commit: feat: keep every attempt's error in jobs.attempt_errors
+
+### History rewritten to remove the agent's product name; every commit hash changed (2026-09-27)
+- Symptom: none (owner request). The product name of the AI coding agent appeared in 2 commit
+  messages, in the agent config file (present in 33 of 35 commits) and in 4 historical wordings in
+  DOCUMENTATION.md (16 commits). It had already been removed from current files in the last commit.
+- Investigation: searched every commit message, every file of every commit and every path name.
+  git filter-repo needs Python (not installed; installing it would be a global install), so used
+  git's built-in filter-branch, as in auth-slice. Backup first: `../ai-slice-pre-rewrite.bundle`
+  (complete history, verified; outside the repo so the old history is not kept inside it).
+- Fix: `git filter-branch --prune-empty` with an index filter (edits stored blobs directly, so no
+  line-ending conversion can touch other files) that drops the agent config file from every commit
+  and rewrites only the matching DOCUMENTATION.md phrases to the current wording, plus a message
+  filter for the one affected body line. The last commit became empty and was dropped: 35 → 34.
+- Verified before pushing: final tree identical to the old HEAD (both `a8bca5a`); per commit pair,
+  no file other than those two changed and no DOCUMENTATION.md line changed unless it held the
+  name; authors, emails and both dates identical for all 34 pairs; only one message changed.
+  Force-pushed with `--force-with-lease` pinned to the old tip. After the push: local reflog
+  expired and objects pruned (old tip no longer present); all refs locally and a fresh clone from
+  GitHub show 0 matches in messages, files, path names and every stored blob; 34 commits, one author.
+- Cause of stale hashes: rewriting changes every hash. Entries above are left as written
+  (append-only), so `Commit:` lines citing `5b67f70` now mean `b0d2ace`. Use the table below.
+  GitHub may keep serving the old commits by exact hash until it garbage-collects them.
+- Commit: (this commit, first after the rewrite; not in the table)
+
+| # | Old hash | New hash | Subject |
+|---|----------|----------|---------|
+| 1 | `9b3f6b1` | `723d0d1` | chore: scaffold ai-slice (Next.js, Prisma, Postgres 18, project rules) |
+| 2 | `1b65653` | `67782fe` | fix: generate Next route types before typecheck |
+| 3 | `94d273f` | `c01bcaa` | chore: choose gemini-3.8-flash for summarisation |
+| 4 | `c1db3d9` | `57ab1f9` | docs: log Gemini model decision |
+| 5 | `0bf6748` | `382eaed` | feat: receipt upload and background extraction/summary pipeline |
+| 6 | `5b98955` | `65f6ec8` | docs: record pipeline decisions and verification log |
+| 7 | `9ca49b7` | `edefd8d` | refactor: swap provider roles (Gemini extracts, DeepSeek summarises) |
+| 8 | `45723fc` | `389d2fa` | docs: record provider role swap and re-verification |
+| 9 | `3aa8ac5` | `4927f99` | docs: update provider roles in AGENTS.md and .env.example |
+| 10 | `d2c0ca2` | `413599a` | docs: log Gemini 400 schema rejection and 20/day free-tier quota |
+| 11 | `5b67f70` | `b0d2ace` | fix: send Gemini a shape-only schema; stop retrying unrecoverable errors |
+| 12 | `b133e70` | `b07673c` | docs: document Gemini 20/day free-tier limit, schema and retry decisions |
+| 13 | `8f34246` | `c814565` | feat: store the model's raw reply when validation fails |
+| 14 | `449b9d4` | `55d791a` | feat: extract tax separately and include it in the total check |
+| 15 | `c6408a9` | `5dac7d6` | feat: keep every attempt's error in jobs.attempt_errors |
+| 16 | `770fa62` | `8875034` | docs: add Overview section to DOCUMENTATION.md |
+| 17 | `a9c32fd` | `74514c8` | docs: correct Overview claims about what the models compute |
+| 18 | `0078933` | `c86cf1f` | docs: add Architecture section to DOCUMENTATION.md |
+| 19 | `321e0d3` | `915600f` | docs: add Setup & Running Locally section to DOCUMENTATION.md |
+| 20 | `0a3450e` | `e638113` | docs: fix Setup section (seed step, .env wording, retry quota use) |
+| 21 | `c50191e` | `a17d110` | docs: add Key Design Decisions section to DOCUMENTATION.md |
+| 22 | `c461417` | `11baad2` | docs: correct Section 4 validation evidence and currency inference |
+| 23 | `874de69` | `c802a1f` | docs: add Security section to DOCUMENTATION.md |
+| 24 | `e71dfbf` | `6001f98` | docs: correct Section 5 auth and key-handling claims; add ownership and origin checks |
+| 25 | `ddd3e51` | `16a3a18` | docs: trim redundant clause from Section 5 API keys paragraph |
+| 26 | `9b04daf` | `b14d959` | docs: align Section 5 API keys heading with its paragraph |
+| 27 | `ee0630e` | `2c69699` | docs: add Testing & Evidence section to DOCUMENTATION.md |
+| 28 | `8a78108` | `5786dc6` | docs: correct Section 6 overclaims (scope, concurrency, retry, schema cause) |
+| 29 | `7345feb` | `4a6a00c` | docs: clarify how the missing-key fallback was verified |
+| 30 | `cc0bdcb` | `c93d0cc` | docs: remove duplicate missing-key mention in Section 6 |
+| 31 | `0e8ef86` | `6611cd3` | docs: add Known Limitations & Trade-offs section to DOCUMENTATION.md |
+| 32 | `9dd927f` | `71e9d90` | docs: merge old limits section into Section 7; correct batch history claim |
+| 33 | `a649bba` | `99f19b5` | docs: complete Section 7 quota paragraph; repoint DECISIONS reference |
+| 34 | `00e00c2` | `0858e85` | docs: remove duplicate free-tier image note from Section 7 |
+| 35 | `a730370` | *(dropped: empty after rewrite)* | *(deleted the agent config file and scrubbed doc wording)* |

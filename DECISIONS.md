@@ -183,3 +183,14 @@
 - Rejected: accepting items < total with the gap treated as tax (would also accept a missed item);
   prompt-only listing tax as line items (tax would then be categorised like a purchase).
 - Files: src/lib/validation/extraction.ts, src/lib/ai/gemini.ts, scripts/check-validation.ts
+
+### Rewrite history to remove the agent's product name (2026-09-27)
+- Decision: whether earlier commits keep the AI coding agent's product name (messages, the agent
+  config file, earlier DOCUMENTATION.md wording) after it was removed from current files.
+- Chosen (owner's decision): rewrite all history with git filter-branch (index + message filters,
+  --prune-empty), verified against a bundle backup, force-pushed with a lease; full old→new hash
+  table appended to BUILD_LOG.md.
+- Rejected: leaving history as is (owner wanted it clean); git filter-repo (needs Python, a global
+  install); a backup branch inside the repo (would keep the old history in it); editing old
+  BUILD_LOG.md hash citations (log is append-only; the table maps them instead).
+- Files: all commits (history); BUILD_LOG.md
