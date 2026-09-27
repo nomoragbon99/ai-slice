@@ -92,6 +92,27 @@ Full write-up to be completed. Sections below are filled in as the build settles
 
 **Model replies are never trusted as-is.** Every response from Gemini or DeepSeek is validated (shape, formats, consistency checks) before it's used anywhere — including before it's shown to a user or summed into a total. A model returning malformed, incomplete, or inconsistent data fails cleanly instead of corrupting a batch's results.
 
+## 6. Testing & Evidence
+
+All testing below was done against the running app with real API calls to Gemini and DeepSeek — no synthetic or mocked responses.
+
+**Single receipt, end to end.** Uploaded a real restaurant receipt (THE BISTRO, $42.07 including 8% tax). Extraction, validation, and categorisation all succeeded, correctly labeling it Food with a one-sentence reason.
+
+**Multiple categories.** Uploaded a second receipt (vehicle maintenance, $241.50). It was correctly categorised as Transport — a different category from the first, confirming categorisation isn't hardcoded or defaulting to one answer.
+
+**Multi-receipt batch.** Uploaded both receipts together in a single batch. Both were extracted and categorised independently, and the summary page correctly showed two separate category totals (Food $42.07, Transport $241.50) with an accurate combined view — confirming the concurrency cap and per-category summing both work correctly with more than one receipt in flight.
+
+**Invalid content correctly rejected.** Uploaded a non-receipt image (a website hero screenshot). Gemini itself reported is_receipt: false; the app marked the receipt as unreadable, left it out of the totals, and did not fail the rest of the batch. Confirmed via the raw saved response that this was a genuine content judgment, not an API or network error.
+
+**Transient provider failure recovers on retry.** During testing, a real Gemini 503 ("high demand") occurred on one receipt. It retried automatically and failed all 3 attempts within the batch; a fresh upload of the same receipt shortly after succeeded, confirming the retry-and-recover path works, and that only retryable errors (429/503/timeout) get retried.
+
+**Downstream provider failure falls back cleanly.** With no credit on the DeepSeek account, a real 402 Insufficient Balance occurred during categorisation. The batch still completed: every extracted receipt was shown under "Other" with its exact total, and the summary page explained that automatic categorisation wasn't available — rather than the batch failing outright or showing a fabricated category.
+
+**Two real bugs found and fixed during this testing, with evidence:**
+
+1. **Schema rejection (400):** Gemini rejected the original extraction request outright because the JSON schema sent to it included value-level constraints (length limits, regex patterns, an item cap) it doesn't accept. Fixed by simplifying the outbound schema to shape-only, keeping all value validation in the app's own Zod checks after the response arrives.
+2. **False-positive validation failure:** The line-item consistency check rejected a correct extraction because it compared item totals against a tax-inclusive total, without knowing about tax. Diagnosed using a saved raw model reply (added specifically to debug this), which showed the model's numbers were right and the check was wrong. Fixed by adding a tax field and checking items + tax against the total.
+
 ## What this doesn't handle
 
 ### Gemini free tier: at most 20 receipt extractions per day
