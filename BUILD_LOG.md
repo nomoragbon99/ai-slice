@@ -270,3 +270,11 @@ Append-only. Never edit or delete past entries.
   statement. No dev server was running, so no stale client needed a restart. Typecheck, lint and
   check:validation (9/9) pass. Not yet re-measured against the live database through the app.
 - Commit: see git log (fix: load session and user in one query)
+
+### Session join fix verified against the live app (2026-09-30)
+- Symptom: the previous entry left the live-database check for commit 7161f1a open.
+- Investigation: the owner ran the app against the real database and exercised sign-in,
+  dashboard, sign-out and sign-in again; all returned 200. The owner also reviewed the diff.
+- Cause: n/a (verification follow-up).
+- Fix: none needed; the fix from 7161f1a stands. The open item in the previous entry is closed.
+- Commit: docs: record live verification of session join fix
