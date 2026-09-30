@@ -7,8 +7,11 @@
 // Files are never stored here: only the storage key that points into src/lib/storage.ts.
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  // relationJoins lets a query say relationLoadStrategy: "join", so a session and its user come back
+  // in one SQL statement. Without it, include always runs a second query for the relation.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {

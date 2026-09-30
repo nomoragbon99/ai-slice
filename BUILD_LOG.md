@@ -248,3 +248,25 @@ Append-only. Never edit or delete past entries.
 | 33 | `a649bba` | `99f19b5` | docs: complete Section 7 quota paragraph; repoint DECISIONS reference |
 | 34 | `00e00c2` | `0858e85` | docs: remove duplicate free-tier image note from Section 7 |
 | 35 | `a730370` | *(dropped: empty after rewrite)* | *(deleted the agent config file and scrubbed doc wording)* |
+
+### validateSession ran two SQL queries; its "one query" comment was wrong (2026-09-30)
+- Symptom: the comment above db.session.findUnique in src/lib/auth/session.ts said "One query
+  fetches the session together with ... its user". The same claim was found false in records-slice.
+- Investigation: no query counter exists in this repo (no src/lib/dev/query-count.ts), and loading
+  .env to reach the local database was blocked for the agent. Measured instead with a throwaway
+  script (outside the repo) that builds this repo's generated PrismaClient on a recording driver
+  adapter: it records every SQL statement Prisma sends and answers with a fake session row, so no
+  database or credentials are involved. The real @prisma/adapter-pg reports
+  supportsRelationJoins: true, which the probe mirrored.
+  - Before (include, no preview feature): 2 statements, `SELECT ... FROM "public"."sessions" WHERE id = $1`
+    then `SELECT ... FROM "public"."users" WHERE id = $1`.
+  - After (relationJoins + relationLoadStrategy: "join"): 1 statement, `sessions AS t0 LEFT JOIN
+    LATERAL (SELECT JSONB_BUILD_OBJECT('id', ..., 'name', ..., 'email', ...) FROM users ...)`.
+    The user object still comes back with only id, name and email.
+- Cause: without Prisma's relationJoins preview feature, include loads a relation with a separate
+  query. The comment asserted the result instead of stating what produces it.
+- Fix: previewFeatures = ["relationJoins"] in prisma/schema.prisma, prisma generate,
+  relationLoadStrategy: "join" on the query, and a comment that names the option that makes it one
+  statement. No dev server was running, so no stale client needed a restart. Typecheck, lint and
+  check:validation (9/9) pass. Not yet re-measured against the live database through the app.
+- Commit: see git log (fix: load session and user in one query)

@@ -50,9 +50,12 @@ export async function validateSession(): Promise<{ session: { id: string }; user
 
   const sessionId = sha256Hex(token);
 
-  // One query fetches the session together with the fields of its user this app is allowed
-  // to expose -- never passwordHash, never anything not listed here.
+  // Fetches the session together with the fields of its user this app is allowed to expose --
+  // never passwordHash, never anything not listed here. relationLoadStrategy "join" (enabled by
+  // the relationJoins preview feature in schema.prisma) is what makes this one SQL statement;
+  // a plain include runs a second query for the user.
   const session = await db.session.findUnique({
+    relationLoadStrategy: "join",
     where: { id: sessionId },
     include: {
       user: {

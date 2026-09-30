@@ -194,3 +194,12 @@
   install); a backup branch inside the repo (would keep the old history in it); editing old
   BUILD_LOG.md hash citations (log is append-only; the table maps them instead).
 - Files: all commits (history); BUILD_LOG.md
+
+### Load the session and its user with a SQL join (2026-09-30)
+- Decision: how validateSession fetches the session row and its user on every signed-in request.
+- Chosen: Prisma's relationJoins preview feature with relationLoadStrategy: "join" on that one
+  query: 1 SQL statement instead of 2 (measured, see BUILD_LOG.md). Same fix as records-slice.
+- Rejected: leaving include's default two-query strategy (an extra round trip per request, and the
+  comment claimed otherwise); a hand-written $queryRaw join (loses the typed select that keeps
+  passwordHash out); making "join" the default everywhere (not needed; only this hot path was measured).
+- Files: prisma/schema.prisma, src/lib/auth/session.ts (client regenerated; src/generated is gitignored)
